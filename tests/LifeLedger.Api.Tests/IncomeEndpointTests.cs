@@ -81,6 +81,39 @@ public sealed class IncomeEndpointTests : IClassFixture<LifeLedgerApiFactory>
         Assert.True(await verificationDatabase.Profiles.AnyAsync(profile => profile.Id == existingProfileId));
     }
 
+    /// <summary>Persists the selected sex while retaining a neutral default for older data and backups.</summary>
+    [Fact]
+    public async Task Updating_a_profile_persists_the_selected_sex()
+    {
+        var profileId = Guid.NewGuid();
+        await using (var scope = _factory.Services.CreateAsyncScope())
+        {
+            var database = scope.ServiceProvider.GetRequiredService<LifeLedgerDbContext>();
+            database.Profiles.Add(new Profile { Id = profileId, DisplayName = "Profile test", BirthDate = new DateOnly(1990, 6, 15) });
+            await database.SaveChangesAsync();
+        }
+
+        using var client = _factory.CreateClient();
+        using var response = await client.PutAsJsonAsync($"/api/profiles/{profileId}", new
+        {
+            id = profileId,
+            displayName = "Profile test",
+            birthDate = "1990-06-15",
+            sex = "Female",
+            homeCountryCode = "PL",
+            baseCurrency = "EUR",
+            expectedLifespan = 84,
+            childrenCount = 0,
+            careers = Array.Empty<object>()
+        });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        await using var verificationScope = _factory.Services.CreateAsyncScope();
+        var verificationDatabase = verificationScope.ServiceProvider.GetRequiredService<LifeLedgerDbContext>();
+        Assert.Equal(ProfileSex.Female, await verificationDatabase.Profiles.Where(profile => profile.Id == profileId).Select(profile => profile.Sex).SingleAsync());
+    }
+
     /// <summary>Returns the local net-worth observations that belong to the selected scenario's profile.</summary>
     [Fact]
     public async Task Net_worth_history_is_available_for_a_scenario()

@@ -170,8 +170,17 @@ api.MapPut("/profiles/{id:guid}", async (Guid id, Profile input, LifeLedgerDbCon
 {
     var profile = await db.Profiles.Include(x => x.Careers).FirstOrDefaultAsync(x => x.Id == id, ct);
     if (profile is null) return Results.NotFound();
+    if (input.BirthDate > DateOnly.FromDateTime(DateTime.UtcNow))
+    {
+        return Results.ValidationProblem(new Dictionary<string, string[]>
+        {
+            ["birthDate"] = ["The date of birth cannot be in the future."]
+        });
+    }
     profile.DisplayName = input.DisplayName.Trim();
     profile.BirthDate = input.BirthDate;
+    // Older backups have no sex field and bind to Neutral; unknown enum values are also kept neutral.
+    profile.Sex = Enum.IsDefined(input.Sex) ? input.Sex : ProfileSex.Neutral;
     profile.HomeCountryCode = input.HomeCountryCode.ToUpperInvariant();
     profile.BaseCurrency = input.BaseCurrency.ToUpperInvariant();
     profile.ExpectedLifespan = Math.Clamp(input.ExpectedLifespan, 50, 130);

@@ -9,12 +9,14 @@ public sealed class Profile
     public string DisplayName { get; set; } = "My financial life";
     /// <summary>Date of birth used to calculate age throughout projections.</summary>
     public DateOnly BirthDate { get; set; }
+    /// <summary>Sex selected for life-expectancy reference values; neutral avoids a sex-specific reference.</summary>
+    public ProfileSex Sex { get; set; } = ProfileSex.Neutral;
     /// <summary>ISO country code of the primary residence.</summary>
     public string HomeCountryCode { get; set; } = "PL";
     /// <summary>ISO 4217 currency used to display consolidated amounts.</summary>
     public string BaseCurrency { get; set; } = "EUR";
-    /// <summary>Last age included in lifetime projections; defaults to the rounded EU average.</summary>
-    public int ExpectedLifespan { get; set; } = 81;
+    /// <summary>Last age included in lifetime projections; defaults to the rounded European planning reference.</summary>
+    public int ExpectedLifespan { get; set; } = 82;
     /// <summary>Optional birth year of the partner.</summary>
     public int? PartnerBirthYear { get; set; }
     /// <summary>Number of dependent children represented in the plan.</summary>

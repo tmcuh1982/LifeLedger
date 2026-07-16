@@ -85,6 +85,7 @@ export interface Profile {
   displayName: string
   baseCurrency: string
   birthDate: string
+  sex: 'Neutral' | 'Female' | 'Male'
   homeCountryCode: string
   expectedLifespan: number
   partnerBirthYear?: number

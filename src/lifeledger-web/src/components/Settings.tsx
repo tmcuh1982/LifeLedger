@@ -5,12 +5,36 @@ import type { LifeLedgerExport, Profile } from '../types'
 const currencies = ['EUR', 'USD', 'PLN', 'GBP', 'CHF', 'CAD', 'JPY']
 const tr = (locale: Locale, english: string, french: string) => locale === 'fr' ? french : english
 
+/** Returns the rounded planning horizon associated with a selectable reference. */
+function referenceAge(reference: 'neutral' | 'female' | 'male') { return reference === 'male' ? 79 : reference === 'female' ? 84 : 82 }
+
+/** Maps the stored optional sex value to the matching life-expectancy reference. */
+function referenceFromSex(sex: Profile['sex']): 'neutral' | 'female' | 'male' { return sex === 'Male' ? 'male' : sex === 'Female' ? 'female' : 'neutral' }
+
+/** Selects the visible reference without overwriting a person's explicitly customised age. */
+function referenceFor(lifespan = 82, sex: Profile['sex'] = 'Neutral'): 'neutral' | 'female' | 'male' | 'custom' {
+  const reference = referenceFromSex(sex)
+  return lifespan === referenceAge(reference) ? reference : 'custom'
+}
+
+/** Calculates age today with the birthday boundary respected. */
+function ageOnToday(birthDate: string): number | undefined {
+  if (!birthDate) return undefined
+  const birth = new Date(`${birthDate}T00:00:00`)
+  if (Number.isNaN(birth.getTime())) return undefined
+  const today = new Date()
+  let age = today.getFullYear() - birth.getFullYear()
+  const beforeBirthday = today.getMonth() < birth.getMonth() || (today.getMonth() === birth.getMonth() && today.getDate() < birth.getDate())
+  if (beforeBirthday) age--
+  return age >= 0 ? age : undefined
+}
+
 interface SettingsProps {
   locale: Locale
   profile?: Profile
   saving: boolean
   onClose: () => void
-  onSaveProfile: (currency: string, expectedLifespan: number) => Promise<void>
+  onSaveProfile: (profile: Profile) => Promise<void>
   onExport: (fileName: string) => Promise<void>
   onRestore: (document: LifeLedgerExport) => Promise<void>
   onResetMarketHistory: () => Promise<void>
@@ -20,11 +44,26 @@ interface SettingsProps {
 
 export function Settings({ locale, profile, saving, onClose, onSaveProfile, onExport, onRestore, onResetMarketHistory, onResetNetWorthHistory, onDeleteAllData }: SettingsProps) {
   const [currency, setCurrency] = useState(profile?.baseCurrency ?? 'EUR')
-  const [expectedLifespan, setExpectedLifespan] = useState(profile?.expectedLifespan ?? 81)
-  const [lifespanReference, setLifespanReference] = useState<'male' | 'female' | 'custom'>(profile?.expectedLifespan === 79 ? 'male' : profile?.expectedLifespan === 84 ? 'female' : 'custom')
+  const [birthDate, setBirthDate] = useState(profile?.birthDate ?? '')
+  const [sex, setSex] = useState<Profile['sex']>(profile?.sex ?? 'Neutral')
+  const [expectedLifespan, setExpectedLifespan] = useState(profile?.expectedLifespan ?? 82)
+  const [lifespanReference, setLifespanReference] = useState<'neutral' | 'female' | 'male' | 'custom'>(referenceFor(profile?.expectedLifespan, profile?.sex))
   const [restoring, setRestoring] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [message, setMessage] = useState<string>()
+
+  const currentAge = ageOnToday(birthDate)
+  const canSaveProfile = profile && (currency !== profile.baseCurrency || birthDate !== profile.birthDate || sex !== profile.sex || expectedLifespan !== profile.expectedLifespan)
+
+  function setReference(reference: 'neutral' | 'female' | 'male' | 'custom') {
+    setLifespanReference(reference)
+    if (reference !== 'custom') setExpectedLifespan(referenceAge(reference))
+  }
+
+  function changeSex(nextSex: Profile['sex']) {
+    setSex(nextSex)
+    if (lifespanReference !== 'custom') setReference(referenceFromSex(nextSex))
+  }
 
   async function restore(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0]
@@ -98,17 +137,34 @@ export function Settings({ locale, profile, saving, onClose, onSaveProfile, onEx
             </label>
             <p className="mt-2 text-xs leading-5 text-muted">{tr(locale, 'All totals and forecasts are shown in this currency.', 'Tous les totaux et prévisions seront affichés dans cette devise.')}</p>
             <div className="mt-5 border-t border-white/10 pt-4">
+              <p className="text-sm font-medium text-mist">{tr(locale, 'About you', 'À propos de vous')}</p>
+              <p className="mt-1 text-xs leading-5 text-muted">{tr(locale, 'Your date of birth gives every forecast both a calendar year and an age. Sex is optional and only guides the life-expectancy reference; it never changes your finances automatically.', 'Votre date de naissance donne à chaque prévision une année civile et un âge. Le sexe est facultatif et sert uniquement de référence pour l’espérance de vie ; il ne modifie jamais vos finances automatiquement.')}</p>
+              <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                <label className="block text-sm text-mist">
+                  {tr(locale, 'Date of birth', 'Date de naissance')}
+                  <input className="field mt-2" max={new Date().toISOString().slice(0, 10)} type="date" value={birthDate} onChange={(event) => setBirthDate(event.target.value)} />
+                  {currentAge !== undefined && <span className="mt-2 block text-xs text-sky">{tr(locale, 'Current age:', 'Âge actuel :')} {currentAge} {tr(locale, 'years', 'ans')}</span>}
+                </label>
+                <label className="block text-sm text-mist">
+                  {tr(locale, 'Sex for reference statistics', 'Sexe pour les statistiques de référence')}
+                  <select className="field mt-2" value={sex} onChange={(event) => changeSex(event.target.value as Profile['sex'])}>
+                    <option className="bg-panel" value="Neutral">{tr(locale, 'Neutral / prefer not to say', 'Neutre / préfère ne pas préciser')}</option>
+                    <option className="bg-panel" value="Female">{tr(locale, 'Woman', 'Femme')}</option>
+                    <option className="bg-panel" value="Male">{tr(locale, 'Man', 'Homme')}</option>
+                  </select>
+                </label>
+              </div>
+            </div>
+            <div className="mt-5 border-t border-white/10 pt-4">
               <p className="text-sm font-medium text-mist">{tr(locale, 'Life expectancy for projections', 'Espérance de vie pour les projections')}</p>
               <p className="mt-1 text-xs leading-5 text-muted">{tr(locale, 'This sets the final age of your Monte Carlo and long-term forecasts. It is only a planning assumption.', 'Cette valeur définit l’âge final de vos simulations Monte Carlo et prévisions long terme. C’est uniquement une hypothèse de planification.')}</p>
               <div className="mt-3 grid gap-3 sm:grid-cols-2">
                 <label className="block text-sm text-mist">
                   {tr(locale, 'European reference', 'Référence européenne')}
                   <select className="field mt-2" value={lifespanReference} onChange={(event) => {
-                    const reference = event.target.value as 'male' | 'female' | 'custom'
-                    setLifespanReference(reference)
-                    if (reference === 'male') setExpectedLifespan(79)
-                    if (reference === 'female') setExpectedLifespan(84)
+                    setReference(event.target.value as 'neutral' | 'female' | 'male' | 'custom')
                   }}>
+                    <option className="bg-panel" value="neutral">{tr(locale, 'Neutral reference · 82 years', 'Référence neutre · 82 ans')}</option>
                     <option className="bg-panel" value="male">{tr(locale, 'Man · 79 years', 'Homme · 79 ans')}</option>
                     <option className="bg-panel" value="female">{tr(locale, 'Woman · 84 years', 'Femme · 84 ans')}</option>
                     <option className="bg-panel" value="custom">{tr(locale, 'Custom value', 'Valeur personnalisée')}</option>
@@ -119,9 +175,9 @@ export function Settings({ locale, profile, saving, onClose, onSaveProfile, onEx
                   <input className="field mt-2" max="130" min="50" type="number" value={expectedLifespan} onChange={(event) => { setLifespanReference('custom'); setExpectedLifespan(Math.max(50, Math.min(130, Number(event.target.value) || 50))) }} />
                 </label>
               </div>
-              <p className="mt-3 text-xs leading-5 text-muted">{tr(locale, 'EU reference values use Eurostat 2024 life expectancy at birth (78.9 years for men and 84.1 years for women), rounded for planning.', 'Les références UE utilisent l’espérance de vie à la naissance Eurostat 2024 (78,9 ans pour les hommes et 84,1 ans pour les femmes), arrondie pour la planification.')}</p>
+              <p className="mt-3 text-xs leading-5 text-muted">{tr(locale, 'European references are rounded planning values: 79 for men, 84 for women and 82 for the neutral reference. They are editable assumptions, not a prediction.', 'Les références européennes sont des hypothèses arrondies : 79 ans pour les hommes, 84 ans pour les femmes et 82 ans pour la référence neutre. Elles sont modifiables et ne constituent pas une prédiction.')}</p>
             </div>
-            <button className="ghost-button mt-4" disabled={saving || (currency === profile.baseCurrency && expectedLifespan === profile.expectedLifespan)} onClick={() => void onSaveProfile(currency, expectedLifespan)}>{saving ? tr(locale, 'Saving…', 'Enregistrement…') : tr(locale, 'Save settings', 'Enregistrer les paramètres')}</button>
+            <button className="ghost-button mt-4" disabled={saving || !canSaveProfile || !birthDate} onClick={() => profile && void onSaveProfile({ ...profile, baseCurrency: currency, birthDate, sex, expectedLifespan })}>{saving ? tr(locale, 'Saving…', 'Enregistrement…') : tr(locale, 'Save settings', 'Enregistrer les paramètres')}</button>
           </article>}
 
           {profile && <article className="rounded-2xl border border-white/10 bg-white/5 p-4">

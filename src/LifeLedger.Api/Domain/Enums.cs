@@ -20,3 +20,6 @@ public enum EventKind { HousePurchase, NewChild, Inheritance, JobLoss, SalaryInc
 
 /// <summary>Defines the model used to project a scenario.</summary>
 public enum SimulationMode { Deterministic, MonteCarlo, Historical }
+
+/// <summary>Optional sex used solely to select transparent life-expectancy planning references.</summary>
+public enum ProfileSex { Neutral, Female, Male }

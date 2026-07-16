@@ -22,10 +22,11 @@ public static class DemoDataSeeder
         {
             DisplayName = "Your plan",
             BirthDate = today.AddYears(-36),
+            Sex = ProfileSex.Neutral,
             HomeCountryCode = "PL",
             BaseCurrency = "EUR",
-            // Rounded 2024 EU average; the owner can choose a sex-specific reference or customise it in Settings.
-            ExpectedLifespan = 81,
+            // Rounded European planning reference; sex-specific or custom values remain selectable in Settings.
+            ExpectedLifespan = 82,
             PartnerBirthYear = today.Year - 35,
             ChildrenCount = 1,
             Careers =
