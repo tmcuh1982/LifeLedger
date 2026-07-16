@@ -10,15 +10,17 @@ interface SettingsProps {
   profile?: Profile
   saving: boolean
   onClose: () => void
-  onSaveCurrency: (currency: string) => Promise<void>
+  onSaveProfile: (currency: string, expectedLifespan: number) => Promise<void>
   onExport: (fileName: string) => Promise<void>
   onRestore: (document: LifeLedgerExport) => Promise<void>
   onResetMarketHistory: () => Promise<void>
   onDeleteAllData: () => Promise<void>
 }
 
-export function Settings({ locale, profile, saving, onClose, onSaveCurrency, onExport, onRestore, onResetMarketHistory, onDeleteAllData }: SettingsProps) {
+export function Settings({ locale, profile, saving, onClose, onSaveProfile, onExport, onRestore, onResetMarketHistory, onDeleteAllData }: SettingsProps) {
   const [currency, setCurrency] = useState(profile?.baseCurrency ?? 'EUR')
+  const [expectedLifespan, setExpectedLifespan] = useState(profile?.expectedLifespan ?? 81)
+  const [lifespanReference, setLifespanReference] = useState<'male' | 'female' | 'custom'>(profile?.expectedLifespan === 79 ? 'male' : profile?.expectedLifespan === 84 ? 'female' : 'custom')
   const [restoring, setRestoring] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [message, setMessage] = useState<string>()
@@ -88,7 +90,31 @@ export function Settings({ locale, profile, saving, onClose, onSaveCurrency, onE
               </select>
             </label>
             <p className="mt-2 text-xs leading-5 text-muted">{tr(locale, 'All totals and forecasts are shown in this currency.', 'Tous les totaux et prévisions seront affichés dans cette devise.')}</p>
-            <button className="ghost-button mt-3" disabled={saving || currency === profile.baseCurrency} onClick={() => void onSaveCurrency(currency)}>{saving ? tr(locale, 'Saving…', 'Enregistrement…') : tr(locale, 'Save currency', 'Enregistrer la devise')}</button>
+            <div className="mt-5 border-t border-white/10 pt-4">
+              <p className="text-sm font-medium text-mist">{tr(locale, 'Life expectancy for projections', 'Espérance de vie pour les projections')}</p>
+              <p className="mt-1 text-xs leading-5 text-muted">{tr(locale, 'This sets the final age of your Monte Carlo and long-term forecasts. It is only a planning assumption.', 'Cette valeur définit l’âge final de vos simulations Monte Carlo et prévisions long terme. C’est uniquement une hypothèse de planification.')}</p>
+              <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                <label className="block text-sm text-mist">
+                  {tr(locale, 'European reference', 'Référence européenne')}
+                  <select className="field mt-2" value={lifespanReference} onChange={(event) => {
+                    const reference = event.target.value as 'male' | 'female' | 'custom'
+                    setLifespanReference(reference)
+                    if (reference === 'male') setExpectedLifespan(79)
+                    if (reference === 'female') setExpectedLifespan(84)
+                  }}>
+                    <option className="bg-panel" value="male">{tr(locale, 'Man · 79 years', 'Homme · 79 ans')}</option>
+                    <option className="bg-panel" value="female">{tr(locale, 'Woman · 84 years', 'Femme · 84 ans')}</option>
+                    <option className="bg-panel" value="custom">{tr(locale, 'Custom value', 'Valeur personnalisée')}</option>
+                  </select>
+                </label>
+                <label className="block text-sm text-mist">
+                  {tr(locale, 'Final age', 'Âge final')}
+                  <input className="field mt-2" max="130" min="50" type="number" value={expectedLifespan} onChange={(event) => { setLifespanReference('custom'); setExpectedLifespan(Math.max(50, Math.min(130, Number(event.target.value) || 50))) }} />
+                </label>
+              </div>
+              <p className="mt-3 text-xs leading-5 text-muted">{tr(locale, 'EU reference values use Eurostat 2024 life expectancy at birth (78.9 years for men and 84.1 years for women), rounded for planning.', 'Les références UE utilisent l’espérance de vie à la naissance Eurostat 2024 (78,9 ans pour les hommes et 84,1 ans pour les femmes), arrondie pour la planification.')}</p>
+            </div>
+            <button className="ghost-button mt-4" disabled={saving || (currency === profile.baseCurrency && expectedLifespan === profile.expectedLifespan)} onClick={() => void onSaveProfile(currency, expectedLifespan)}>{saving ? tr(locale, 'Saving…', 'Enregistrement…') : tr(locale, 'Save settings', 'Enregistrer les paramètres')}</button>
           </article>}
 
           {profile && <article className="rounded-2xl border border-white/10 bg-white/5 p-4">

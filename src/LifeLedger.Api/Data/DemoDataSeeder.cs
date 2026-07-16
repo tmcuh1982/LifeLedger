@@ -24,7 +24,8 @@ public static class DemoDataSeeder
             BirthDate = today.AddYears(-36),
             HomeCountryCode = "PL",
             BaseCurrency = "EUR",
-            ExpectedLifespan = 92,
+            // Rounded 2024 EU average; the owner can choose a sex-specific reference or customise it in Settings.
+            ExpectedLifespan = 81,
             PartnerBirthYear = today.Year - 35,
             ChildrenCount = 1,
             Careers =

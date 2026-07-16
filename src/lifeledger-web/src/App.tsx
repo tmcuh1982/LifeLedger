@@ -117,13 +117,13 @@ export function App() {
     catch (reason) { setError(reason instanceof Error ? reason.message : 'Could not load settings.') }
   }
 
-  async function saveDefaultCurrency(baseCurrency: string) {
+  async function saveProfileSettings(baseCurrency: string, expectedLifespan: number) {
     if (!profile) return
     try {
       setSavingSettings(true)
-      setProfile(await api.updateProfile({ ...profile, baseCurrency }))
+      setProfile(await api.updateProfile({ ...profile, baseCurrency, expectedLifespan }))
       await refresh()
-    } catch (reason) { setError(reason instanceof Error ? reason.message : 'Could not save settings.') }
+    } catch (reason) { setError(reason instanceof Error ? reason.message : 'Could not save profile settings.') }
     finally { setSavingSettings(false) }
   }
 
@@ -175,7 +175,7 @@ export function App() {
 
           {error && <div className="mb-6 flex items-center justify-between gap-4 rounded-2xl border border-danger/30 bg-danger/10 px-4 py-3 text-sm text-danger"><span>{error}</span><button className="text-xs font-bold uppercase" onClick={() => setError(undefined)}>{tr(locale, 'Dismiss', 'Fermer')}</button></div>}
           {loading && !dashboard ? <Loading locale={locale} /> : !selected || !dashboard ? <Empty locale={locale} /> : page === 'dashboard' ? <DashboardPage dashboard={dashboard} locale={locale} onPlan={() => setPage('planner')} /> : page === 'planner' && data ? <Planner data={data} scenarioId={selected.id} currency={currency} locale={locale} onCreate={createItem} onUpdate={updateItem} onDelete={deleteItem} /> : page === 'simulator' ? <SimulatorPage dashboard={dashboard} simulation={simulation} locale={locale} onRun={runSimulation} /> : <ScenariosPage scenarios={scenarios} selectedId={selected.id} name={scenarioName} creating={creating} locale={locale} onName={setScenarioName} onSubmit={createScenario} onSelect={selectScenario} />}
-          {settingsOpen && <Settings locale={locale} profile={profile} saving={savingSettings} onClose={() => setSettingsOpen(false)} onSaveCurrency={saveDefaultCurrency} onExport={downloadExport} onRestore={restoreBackup} onResetMarketHistory={resetMarketHistory} onDeleteAllData={deleteAllData} />}
+          {settingsOpen && <Settings locale={locale} profile={profile} saving={savingSettings} onClose={() => setSettingsOpen(false)} onSaveProfile={saveProfileSettings} onExport={downloadExport} onRestore={restoreBackup} onResetMarketHistory={resetMarketHistory} onDeleteAllData={deleteAllData} />}
         </div>
       </div>
     </main>

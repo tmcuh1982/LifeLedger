@@ -13,8 +13,8 @@ public sealed class Profile
     public string HomeCountryCode { get; set; } = "PL";
     /// <summary>ISO 4217 currency used to display consolidated amounts.</summary>
     public string BaseCurrency { get; set; } = "EUR";
-    /// <summary>Last age included in lifetime projections.</summary>
-    public int ExpectedLifespan { get; set; } = 92;
+    /// <summary>Last age included in lifetime projections; defaults to the rounded EU average.</summary>
+    public int ExpectedLifespan { get; set; } = 81;
     /// <summary>Optional birth year of the partner.</summary>
     public int? PartnerBirthYear { get; set; }
     /// <summary>Number of dependent children represented in the plan.</summary>
