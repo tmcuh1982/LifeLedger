@@ -51,6 +51,7 @@ builder.Services.AddCors(options => options.AddDefaultPolicy(policy => policy
 builder.Services.AddSingleton<ICountryCatalog, CountryCatalog>();
 builder.Services.AddScoped<IScenarioRepository, ScenarioRepository>();
 builder.Services.AddScoped<IDatabaseMigrator, DatabaseMigrator>();
+builder.Services.AddScoped<IDataImportService, DataImportService>();
 builder.Services.AddScoped<IMarketDataService, MarketDataService>();
 builder.Services.AddHttpClient();
 builder.Services.AddSingleton<ICurrencyService>(serviceProvider => new LocalCurrencyService(
@@ -254,26 +255,17 @@ api.MapGet("/export", async (LifeLedgerDbContext db, CancellationToken ct) =>
     return Results.Ok(new LifeLedgerExport(1, DateTimeOffset.UtcNow, profile, scenarios));
 });
 
-api.MapPost("/import", async (ImportRequest request, LifeLedgerDbContext db, CancellationToken ct) =>
+api.MapPost("/import", async (ImportRequest request, IDataImportService importer, CancellationToken ct) =>
 {
-    if (request.Document.SchemaVersion != 1) return Results.BadRequest(new { message = "Unsupported export schema." });
-    // Replacement is explicit because imports can otherwise coexist with existing local data.
-    if (request.ReplaceExisting)
+    try
     {
-        await db.Scenarios.ExecuteDeleteAsync(ct);
-        await db.Profiles.ExecuteDeleteAsync(ct);
+        var profileId = await importer.ImportAsync(request, ct);
+        return Results.Created("/api/profiles", new { id = profileId });
     }
-    var profile = request.Document.Profile;
-    profile.Id = Guid.NewGuid();
-    foreach (var career in profile.Careers) { career.Id = Guid.NewGuid(); career.ProfileId = profile.Id; career.Profile = null; }
-    db.Profiles.Add(profile);
-    foreach (var scenario in request.Document.Scenarios)
+    catch (ImportValidationException exception)
     {
-        ResetScenarioIds(scenario, profile.Id);
-        db.Scenarios.Add(scenario);
+        return Results.ValidationProblem(exception.Errors);
     }
-    await db.SaveChangesAsync(ct);
-    return Results.Created("/api/profiles", new { profile.Id });
 });
 
 app.MapFallbackToFile("index.html");
@@ -299,19 +291,6 @@ static FinancialScenario CloneScenario(FinancialScenario parent, CreateScenarioR
     Investments = parent.Investments.Select(x => new InvestmentPlan { Name = x.Name, MonthlyContribution = x.MonthlyContribution, ExpectedAnnualReturn = x.ExpectedAnnualReturn, StartsOn = x.StartsOn, EndsOn = x.EndsOn }).ToList(),
     Events = parent.Events.Select(x => new ScenarioEvent { Name = x.Name, Kind = x.Kind, HappensOn = x.HappensOn, RecurrenceFrequency = x.RecurrenceFrequency, RecurrenceEndsOn = x.RecurrenceEndsOn, OneOffCashImpact = x.OneOffCashImpact, MonthlyCashImpact = x.MonthlyCashImpact, DurationMonths = x.DurationMonths, Notes = x.Notes }).ToList()
 };
-
-/// <summary>Assigns new local identities to imported data so it cannot overwrite existing records.</summary>
-static void ResetScenarioIds(FinancialScenario scenario, Guid profileId)
-{
-    scenario.Id = Guid.NewGuid(); scenario.ProfileId = profileId; scenario.Profile = null; scenario.ParentScenarioId = null;
-    scenario.Assumptions.Id = Guid.NewGuid(); scenario.Assumptions.ScenarioId = scenario.Id; scenario.Assumptions.Scenario = null;
-    foreach (var item in scenario.Incomes) { item.Id = Guid.NewGuid(); item.ScenarioId = scenario.Id; item.Scenario = null; }
-    foreach (var item in scenario.Assets) { item.Id = Guid.NewGuid(); item.ScenarioId = scenario.Id; item.Scenario = null; }
-    foreach (var item in scenario.Liabilities) { item.Id = Guid.NewGuid(); item.ScenarioId = scenario.Id; item.Scenario = null; }
-    foreach (var item in scenario.Expenses) { item.Id = Guid.NewGuid(); item.ScenarioId = scenario.Id; item.Scenario = null; }
-    foreach (var item in scenario.Investments) { item.Id = Guid.NewGuid(); item.ScenarioId = scenario.Id; item.Scenario = null; }
-    foreach (var item in scenario.Events) { item.Id = Guid.NewGuid(); item.ScenarioId = scenario.Id; item.Scenario = null; }
-}
 
 /// <summary>Maps consistent create, update, and delete endpoints for a scenario-owned collection.</summary>
 static void MapCollection<T>(RouteGroupBuilder api, string resource, Func<LifeLedgerDbContext, Guid, ValueTask<T?>> find, Func<T, Guid> getId, Action<T, Guid> setId, Func<T, Guid> getScenarioId, Action<T, Guid> setScenarioId) where T : class

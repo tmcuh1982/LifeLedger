@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using LifeLedger.Api.Contracts;
 using LifeLedger.Api.Data;
 using LifeLedger.Api.Domain;
 using Microsoft.EntityFrameworkCore;
@@ -50,5 +51,32 @@ public sealed class IncomeEndpointTests : IClassFixture<LifeLedgerApiFactory>
         await using var verificationScope = _factory.Services.CreateAsyncScope();
         var verificationDatabase = verificationScope.ServiceProvider.GetRequiredService<LifeLedgerDbContext>();
         Assert.Equal(0, await verificationDatabase.Profiles.CountAsync());
+    }
+
+    /// <summary>Rejects an invalid replacement import before it can remove the current local profile.</summary>
+    [Fact]
+    public async Task Invalid_replacement_import_preserves_existing_data()
+    {
+        var existingProfileId = Guid.NewGuid();
+        await using (var scope = _factory.Services.CreateAsyncScope())
+        {
+            var database = scope.ServiceProvider.GetRequiredService<LifeLedgerDbContext>();
+            database.Profiles.Add(new Profile { Id = existingProfileId, DisplayName = "Existing local profile" });
+            await database.SaveChangesAsync();
+        }
+
+        var invalidDocument = new LifeLedgerExport(
+            1,
+            DateTimeOffset.UtcNow,
+            new Profile { DisplayName = "", BaseCurrency = "EUR", ExpectedLifespan = 81 },
+            []);
+        using var client = _factory.CreateClient();
+        using var response = await client.PostAsJsonAsync("/api/import", new ImportRequest(invalidDocument, ReplaceExisting: true));
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+
+        await using var verificationScope = _factory.Services.CreateAsyncScope();
+        var verificationDatabase = verificationScope.ServiceProvider.GetRequiredService<LifeLedgerDbContext>();
+        Assert.True(await verificationDatabase.Profiles.AnyAsync(profile => profile.Id == existingProfileId));
     }
 }
