@@ -2,14 +2,19 @@ using LifeLedger.Api.Contracts;
 
 namespace LifeLedger.Api.Services;
 
+/// <summary>Provides country defaults used to initialise financial assumptions.</summary>
 public interface ICountryCatalog
 {
+    /// <summary>Returns every built-in country definition.</summary>
     IReadOnlyList<CountryInfo> List();
+    /// <summary>Returns a country definition or the custom fallback when no code matches.</summary>
     CountryInfo Get(string countryCode);
 }
 
+/// <summary>In-memory catalogue of the first supported countries and their defaults.</summary>
 public sealed class CountryCatalog : ICountryCatalog
 {
+    // This is intentionally local, deterministic starter data rather than a remote country service.
     private static readonly CountryInfo[] Countries =
     [
         new("BE", "Belgium", 0.022m, 67, "EUR"),
@@ -22,6 +27,9 @@ public sealed class CountryCatalog : ICountryCatalog
         new("OTHER", "Other / custom", 0.025m, 65, "EUR")
     ];
 
+    /// <inheritdoc />
     public IReadOnlyList<CountryInfo> List() => Countries;
+
+    /// <inheritdoc />
     public CountryInfo Get(string countryCode) => Countries.FirstOrDefault(x => x.Code.Equals(countryCode, StringComparison.OrdinalIgnoreCase)) ?? Countries[^1];
 }

@@ -3,35 +3,51 @@ using LifeLedger.Api.Domain;
 
 namespace LifeLedger.Api.Services;
 
+/// <summary>Provides the current annual state to a projection plugin.</summary>
 public sealed record ProjectionContext(FinancialScenario Scenario, int YearIndex, DateOnly Date, int Age, decimal InflationRate);
 
 /// <summary>Extension point for country, tax and planning plugins to alter an annual projection.</summary>
 public interface IProjectionModifier
 {
+    /// <summary>Adjusts one projected year without mutating the source scenario.</summary>
     void Apply(ProjectionContext context, ProjectionAdjustment adjustment);
 }
 
+/// <summary>Collects additive changes requested by one or more projection plugins.</summary>
 public sealed class ProjectionAdjustment
 {
+    /// <summary>Amount added to annual income.</summary>
     public decimal IncomeDelta { get; set; }
+    /// <summary>Amount added to annual expenses.</summary>
     public decimal ExpenseDelta { get; set; }
+    /// <summary>Amount added directly to the asset value.</summary>
     public decimal NetWorthDelta { get; set; }
+    /// <summary>Human-readable explanations contributed by plugins.</summary>
     public List<string> Notes { get; } = [];
 }
 
+/// <summary>Builds dashboard summaries and lifetime financial simulations.</summary>
 public interface IProjectionEngine
 {
+    /// <summary>Projects a scenario according to the requested simulation mode.</summary>
     SimulationResponse Simulate(FinancialScenario scenario, SimulationRequest request);
+    /// <summary>Builds the dashboard metrics and charts for a scenario.</summary>
     DashboardResponse BuildDashboard(FinancialScenario scenario);
 }
 
+/// <summary>Local deterministic, historical, and Monte Carlo projection engine.</summary>
 public sealed class ProjectionEngine(ICurrencyService currencies, IEnumerable<IProjectionModifier> modifiers) : IProjectionEngine
 {
+    /// <summary>Converts each source amount to the profile's base currency.</summary>
     private readonly ICurrencyService _currencies = currencies;
+    /// <summary>Plugins captured once at startup to keep each simulation deterministic in composition.</summary>
     private readonly IProjectionModifier[] _modifiers = modifiers.ToArray();
+    /// <summary>Illustrative annual return sequence used by historical simulation mode.</summary>
     private static readonly decimal[] HistoricalReturns = [0.18m, 0.12m, -0.21m, 0.08m, 0.16m, -0.11m, 0.23m, 0.06m, -0.07m, 0.14m, 0.09m, -0.18m];
+    /// <summary>Illustrative annual inflation sequence paired with historical simulation mode.</summary>
     private static readonly decimal[] HistoricalInflation = [0.018m, 0.021m, 0.026m, 0.014m, 0.031m, 0.047m, 0.022m, 0.016m, 0.038m, 0.027m, 0.019m, 0.024m];
 
+    /// <inheritdoc />
     public DashboardResponse BuildDashboard(FinancialScenario scenario)
     {
         var deterministic = Simulate(scenario, new SimulationRequest(SimulationMode.Deterministic));
@@ -43,6 +59,7 @@ public sealed class ProjectionEngine(ICurrencyService currencies, IEnumerable<IP
         var passiveIncome = scenario.Incomes
             .Where(x => x.Kind is IncomeKind.Rental or IncomeKind.Dividends or IncomeKind.Royalties)
             .Sum(x => ToBase(scenario, x.MonthlyAmount, x.Currency));
+        // Financial independence is reached when the planned withdrawal rate covers annual expenses.
         var fi = timeline.FirstOrDefault(x => x.NetWorth * scenario.Assumptions.SafeWithdrawalRate >= x.Expenses)?.Year;
         DateOnly? fiDate = fi is null ? null : scenario.StartsOn.AddYears(fi.Value);
         var purchasingPowerChange = first.NetWorth == 0 ? 0 : (last.InflationAdjustedNetWorth / first.NetWorth - 1m) * 100m;
@@ -65,6 +82,7 @@ public sealed class ProjectionEngine(ICurrencyService currencies, IEnumerable<IP
             warnings);
     }
 
+    /// <inheritdoc />
     public SimulationResponse Simulate(FinancialScenario scenario, SimulationRequest request)
     {
         var years = Math.Clamp(request.Years ?? Math.Max(1, scenario.Profile!.ExpectedLifespan - AgeAt(scenario.Profile.BirthDate, scenario.StartsOn)), 1, 80);
@@ -79,6 +97,7 @@ public sealed class ProjectionEngine(ICurrencyService currencies, IEnumerable<IP
             return new SimulationResponse(request.Mode, 1, deterministicTimeline.All(x => x.NetWorth >= 0) ? 1m : 0m, deterministicTimeline, [deterministicTimeline[^1].NetWorth], BuildWarnings(scenario, deterministicTimeline));
         }
 
+        // Each seeded random path is reproducible, which makes unexpected simulation changes testable.
         var successfulRuns = 0;
         var terminalValues = new decimal[runs];
         for (var run = 0; run < runs; run++)
@@ -94,11 +113,13 @@ public sealed class ProjectionEngine(ICurrencyService currencies, IEnumerable<IP
         return new SimulationResponse(SimulationMode.MonteCarlo, runs, probability, deterministicTimeline, terminalValues.Order().ToArray(), warnings.Distinct().ToArray());
     }
 
+    /// <summary>Projects annual cash flow, assets, debt, and purchasing power for one simulation path.</summary>
     private IReadOnlyList<ProjectionYear> Project(FinancialScenario scenario, int years, SimulationMode mode, Random? random)
     {
         var profile = scenario.Profile!;
         var assumptions = scenario.Assumptions;
         var startAge = AgeAt(profile.BirthDate, scenario.StartsOn);
+        // All calculations are consolidated in the profile's base currency before aggregation.
         var assetValue = scenario.Assets.Sum(x => ToBase(scenario, x.CurrentValue, x.Currency));
         var debt = scenario.Liabilities.Sum(x => ToBase(scenario, x.OutstandingBalance, x.Currency));
         var initialNetWorth = assetValue - debt;
@@ -120,6 +141,7 @@ public sealed class ProjectionEngine(ICurrencyService currencies, IEnumerable<IP
             var eventImpact = AnnualEventImpact(scenario, date);
             var publicPension = age >= assumptions.RetirementAge ? GetRetirementIncome(scenario) * 12m : 0m;
             var passiveIncome = AnnualPassiveIncome(scenario, date, age, assumptions.RetirementAge);
+            // Plugins only add deltas, preserving the original scenario entered by the user.
             var adjustment = new ProjectionAdjustment();
             var context = new ProjectionContext(scenario, year, date, age, annualInflation);
             foreach (var modifier in _modifiers) modifier.Apply(context, adjustment);
@@ -156,6 +178,7 @@ public sealed class ProjectionEngine(ICurrencyService currencies, IEnumerable<IP
         return rows;
     }
 
+    /// <summary>Calculates annual non-passive income after growth, inflation indexing, and declared tax.</summary>
     private decimal AnnualIncome(FinancialScenario scenario, DateOnly date, int age, int retirementAge, decimal inflationRate) => scenario.Incomes
         .Where(x => x.Kind is not (IncomeKind.Rental or IncomeKind.Dividends or IncomeKind.Royalties))
         .Where(x => IsActive(x.StartsOn, x.EndsOn, date) && (x.Kind != IncomeKind.Salary || age < retirementAge))
@@ -167,19 +190,23 @@ public sealed class ProjectionEngine(ICurrencyService currencies, IEnumerable<IP
             return ToBase(scenario, AfterIncomeTax(x, grossIncome), x.Currency);
         });
 
+    /// <summary>Calculates annual rental, dividend, and royalty income after declared tax.</summary>
     private decimal AnnualPassiveIncome(FinancialScenario scenario, DateOnly date, int age, int retirementAge) => scenario.Incomes
         .Where(x => x.Kind is IncomeKind.Rental or IncomeKind.Dividends or IncomeKind.Royalties)
         .Where(x => IsActive(x.StartsOn, x.EndsOn, date))
         .Sum(x => ToBase(scenario, AfterIncomeTax(x, x.MonthlyAmount * 12m * Pow(1m + x.AnnualGrowthRate, YearsBetween(x.StartsOn, date))), x.Currency));
 
+    /// <summary>Applies an effective tax rate clamped to a valid fraction.</summary>
     private static decimal AfterIncomeTax(IncomeStream income, decimal grossIncome) => income.IsTaxable
         ? grossIncome * (1m - Math.Clamp(income.TaxRate, 0m, 1m))
         : grossIncome;
 
+    /// <summary>Calculates annual expenses, including recurrence and optional inflation indexing.</summary>
     private decimal AnnualExpenses(FinancialScenario scenario, DateOnly date, int year, decimal inflationRate) => scenario.Expenses
         .Where(x => IsActive(x.StartsOn, x.EndsOn, date))
         .Sum(x => ToBase(scenario, x.MonthlyAmount * OccurrencesPerYear(x, date) * (x.IndexedToInflation ? Pow(1m + inflationRate, Math.Max(0, year)) : 1m), x.Currency));
 
+    /// <summary>Converts an expense recurrence into its expected number of occurrences in one year.</summary>
     private static decimal OccurrencesPerYear(Expense expense, DateOnly date)
     {
         if (expense.Kind == ExpenseKind.Exceptional) return 1m;
@@ -197,12 +224,15 @@ public sealed class ProjectionEngine(ICurrencyService currencies, IEnumerable<IP
         };
     }
 
+    /// <summary>Calculates annual planned contributions that are active on the projection date.</summary>
     private static decimal AnnualContributions(FinancialScenario scenario, DateOnly date) => scenario.Investments
         .Where(x => IsActive(x.StartsOn, x.EndsOn, date)).Sum(x => x.MonthlyContribution * 12m);
 
+    /// <summary>Calculates annual payments for liabilities that have not yet been paid off.</summary>
     private decimal AnnualDebtPayments(FinancialScenario scenario, DateOnly date) => scenario.Liabilities
         .Where(x => x.PaidOffOn is null || date <= x.PaidOffOn).Sum(x => ToBase(scenario, x.MonthlyPayment * 12m, x.Currency));
 
+    /// <summary>Calculates the annual cash impact of both one-off and recurring life events.</summary>
     private static decimal AnnualEventImpact(FinancialScenario scenario, DateOnly date) => scenario.Events.Sum(e =>
     {
         if (e.RecurrenceFrequency is { } frequency)
@@ -216,6 +246,7 @@ public sealed class ProjectionEngine(ICurrencyService currencies, IEnumerable<IP
         return oneOff + recurring;
     });
 
+    /// <summary>Converts an event recurrence into its expected number of occurrences in one year.</summary>
     private static decimal EventOccurrencesPerYear(RecurrenceFrequency frequency, DateOnly startsOn, DateOnly date) => frequency switch
     {
         RecurrenceFrequency.Daily => 365.25m,
@@ -228,6 +259,7 @@ public sealed class ProjectionEngine(ICurrencyService currencies, IEnumerable<IP
         _ => 1m
     };
 
+    /// <summary>Reduces outstanding debt by annual payments after applying a weighted interest rate.</summary>
     private decimal AdvanceDebt(FinancialScenario scenario, decimal totalDebt, DateOnly date)
     {
         var active = scenario.Liabilities.Where(x => x.PaidOffOn is null || date <= x.PaidOffOn).ToArray();
@@ -237,6 +269,7 @@ public sealed class ProjectionEngine(ICurrencyService currencies, IEnumerable<IP
         return Math.Max(0m, totalDebt * (1m + weightedRate) - active.Sum(x => ToBase(scenario, x.MonthlyPayment * 12m, x.Currency)));
     }
 
+    /// <summary>Combines declared pension income with estimates from all career periods.</summary>
     private decimal GetRetirementIncome(FinancialScenario scenario)
     {
         var publicPension = scenario.Profile!.Careers.Sum(x => x.EstimatedMonthlyPublicPension);
@@ -244,12 +277,14 @@ public sealed class ProjectionEngine(ICurrencyService currencies, IEnumerable<IP
         return publicPension + declaredPension;
     }
 
+    /// <summary>Groups current assets into base-currency allocation slices.</summary>
     private IReadOnlyList<AllocationSlice> BuildAllocation(FinancialScenario scenario)
     {
         var total = scenario.Assets.Sum(x => ToBase(scenario, x.CurrentValue, x.Currency));
         return scenario.Assets.GroupBy(x => new { x.Name, x.Kind }).Select(x => new AllocationSlice(x.Key.Name, x.Key.Kind, x.Sum(y => ToBase(scenario, y.CurrentValue, y.Currency)), total == 0 ? 0 : Math.Round(x.Sum(y => ToBase(scenario, y.CurrentValue, y.Currency)) / total * 100m, 2))).OrderByDescending(x => x.Value).ToArray();
     }
 
+    /// <summary>Builds clear warnings from solvency, purchasing power, liquidity, and debt indicators.</summary>
     private IReadOnlyList<string> BuildWarnings(FinancialScenario scenario, IReadOnlyList<ProjectionYear> timeline)
     {
         var warnings = new List<string>();
@@ -266,6 +301,7 @@ public sealed class ProjectionEngine(ICurrencyService currencies, IEnumerable<IP
         return warnings;
     }
 
+    /// <summary>Calculates a current-value-weighted return net of the declared capital-gains tax.</summary>
     private decimal WeightedReturn(IEnumerable<Asset> assets, FinancialScenario scenario)
     {
         var values = assets.ToArray();
@@ -273,6 +309,7 @@ public sealed class ProjectionEngine(ICurrencyService currencies, IEnumerable<IP
         return total == 0 ? 0.04m : values.Sum(x => ToBase(scenario, x.CurrentValue, x.Currency) * x.ExpectedAnnualReturn * (1m - Math.Clamp(x.CapitalGainsTaxRate, 0m, 1m))) / total;
     }
 
+    /// <summary>Calculates a current-value-weighted volatility with a configurable fallback.</summary>
     private decimal WeightedVolatility(IEnumerable<Asset> assets, FinancialScenario scenario, decimal fallback)
     {
         var values = assets.ToArray();
@@ -280,10 +317,21 @@ public sealed class ProjectionEngine(ICurrencyService currencies, IEnumerable<IP
         return total == 0 ? fallback : values.Sum(x => ToBase(scenario, x.CurrentValue, x.Currency) * (x.Volatility == 0 ? fallback : x.Volatility)) / total;
     }
 
+    /// <summary>Determines whether a dated entry is active for a projected date.</summary>
     private static bool IsActive(DateOnly startsOn, DateOnly? endsOn, DateOnly date) => startsOn <= date && (endsOn is null || endsOn >= date);
+
+    /// <summary>Converts an amount to the owning profile's display currency.</summary>
     private decimal ToBase(FinancialScenario scenario, decimal amount, string currency) => _currencies.Convert(amount, currency, scenario.Profile!.BaseCurrency);
+
+    /// <summary>Returns whole calendar years elapsed between two dates, never negative.</summary>
     private static int YearsBetween(DateOnly start, DateOnly end) => Math.Max(0, end.Year - start.Year);
+
+    /// <summary>Raises a decimal value to a non-negative integer power without floating-point conversion.</summary>
     private static decimal Pow(decimal value, int exponent) { var output = 1m; for (var i = 0; i < exponent; i++) output *= value; return output; }
+
+    /// <summary>Calculates age on a given date, accounting for whether the birthday has passed.</summary>
     private static int AgeAt(DateOnly birthDate, DateOnly date) => date.Year - birthDate.Year - (date < birthDate.AddYears(date.Year - birthDate.Year) ? 1 : 0);
+
+    /// <summary>Generates a standard-normal random value using the Box-Muller transform.</summary>
     private static decimal Normal(Random random) { var u1 = 1d - random.NextDouble(); var u2 = 1d - random.NextDouble(); return (decimal)(Math.Sqrt(-2d * Math.Log(u1)) * Math.Cos(2d * Math.PI * u2)); }
 }

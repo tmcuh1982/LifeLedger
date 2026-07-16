@@ -4,12 +4,16 @@ using Xunit;
 
 namespace LifeLedger.Api.Tests;
 
+/// <summary>Verifies public API behaviour for income entries.</summary>
 public sealed class IncomeEndpointTests : IClassFixture<LifeLedgerApiFactory>
 {
+    /// <summary>Hosts the API with an isolated temporary database.</summary>
     private readonly LifeLedgerApiFactory _factory;
 
+    /// <summary>Creates the test class with its shared in-process API host.</summary>
     public IncomeEndpointTests(LifeLedgerApiFactory factory) => _factory = factory;
 
+    /// <summary>Protects clients from receiving a misleading 405 response for a valid PUT route.</summary>
     [Fact]
     public async Task Updating_an_unknown_income_returns_not_found_not_method_not_allowed()
     {

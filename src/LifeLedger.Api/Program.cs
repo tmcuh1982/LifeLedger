@@ -8,6 +8,7 @@ using LifeLedger.Api.Services;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 
+// Support both `dotnet run` from the repository root and execution from the published project directory.
 var workingDirectory = Directory.GetCurrentDirectory();
 var sourceProjectDirectory = Path.Combine(workingDirectory, "src", "LifeLedger.Api");
 var contentRoot = Directory.Exists(sourceProjectDirectory) ? sourceProjectDirectory : workingDirectory;
@@ -19,6 +20,7 @@ builder.Services.ConfigureHttpJsonOptions(options =>
     options.SerializerOptions.ReferenceHandler = ReferenceHandler.IgnoreCycles;
 });
 
+// SQLite is the private, dependency-free default; PostgreSQL is selected only by explicit configuration.
 var provider = builder.Configuration["Database:Provider"] ?? "Sqlite";
 var connectionString = builder.Configuration.GetConnectionString("LifeLedger") ?? "Data Source=data/lifeledger.db";
 if (provider.Equals("Sqlite", StringComparison.OrdinalIgnoreCase))
@@ -26,6 +28,7 @@ if (provider.Equals("Sqlite", StringComparison.OrdinalIgnoreCase))
     var sqlite = new SqliteConnectionStringBuilder(connectionString);
     if (!string.IsNullOrWhiteSpace(sqlite.DataSource) && sqlite.DataSource != ":memory:")
     {
+        // Resolve relative SQLite paths under the content root, never the caller's working directory.
         sqlite.DataSource = Path.IsPathRooted(sqlite.DataSource)
             ? sqlite.DataSource
             : Path.Combine(builder.Environment.ContentRootPath, sqlite.DataSource);
@@ -40,6 +43,7 @@ builder.Services.AddDbContext<LifeLedgerDbContext>(options =>
     else
         options.UseSqlite(connectionString);
 });
+// The development frontend is explicitly allow-listed; deployments can replace this configuration.
 var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>()
     ?? ["http://localhost:5173", "http://127.0.0.1:5173"];
 builder.Services.AddCors(options => options.AddDefaultPolicy(policy => policy
@@ -54,12 +58,14 @@ builder.Services.AddSingleton<ICurrencyService>(serviceProvider => new LocalCurr
     serviceProvider.GetRequiredService<IHttpClientFactory>(),
     serviceProvider.GetRequiredService<ILogger<LocalCurrencyService>>()));
 
+// Plugins are loaded once at startup and only from the server's local plugin directory.
 var pluginRegistry = new PluginRegistry();
 pluginRegistry.Load(Path.Combine(builder.Environment.ContentRootPath, builder.Configuration["Plugins:Directory"] ?? "plugins"), LoggerFactory.Create(logging => logging.AddConsole()).CreateLogger<PluginRegistry>());
 builder.Services.AddSingleton(pluginRegistry);
 builder.Services.AddSingleton<IProjectionEngine>(serviceProvider => new ProjectionEngine(serviceProvider.GetRequiredService<ICurrencyService>(), pluginRegistry.ProjectionModifiers));
 
 var app = builder.Build();
+// Capture request duration and failures in the local log without sending data to a third party.
 app.Use(async (context, next) =>
 {
     var startedAt = Stopwatch.GetTimestamp();
@@ -85,6 +91,7 @@ app.UseStaticFiles();
 
 using (var scope = app.Services.CreateScope())
 {
+    // Schema is ready before seeding or serving any request.
     var migrator = scope.ServiceProvider.GetRequiredService<IDatabaseMigrator>();
     await migrator.ApplyAsync();
     var db = scope.ServiceProvider.GetRequiredService<LifeLedgerDbContext>();
@@ -107,6 +114,7 @@ api.MapPost("/market/refresh", async (IMarketDataService marketData, Cancellatio
 api.MapGet("/assets/{id:guid}/history", async (Guid id, LifeLedgerDbContext db, CancellationToken ct) =>
     Results.Ok(await db.AssetQuoteSnapshots.AsNoTracking().Where(x => x.AssetId == id).OrderBy(x => x.CapturedAt)
         .Select(x => new { x.CapturedAt, x.Price, x.Currency, x.Source }).ToListAsync(ct)));
+// Removing price history deliberately does not alter the current value of the user's assets.
 api.MapDelete("/market/history", async (LifeLedgerDbContext db, CancellationToken ct) =>
 {
     await db.AssetQuoteSnapshots.ExecuteDeleteAsync(ct);
@@ -131,6 +139,7 @@ api.MapPut("/profiles/{id:guid}", async (Guid id, Profile input, LifeLedgerDbCon
     profile.ExpectedLifespan = Math.Clamp(input.ExpectedLifespan, 50, 130);
     profile.PartnerBirthYear = input.PartnerBirthYear;
     profile.ChildrenCount = Math.Max(0, input.ChildrenCount);
+    // Career periods are replaced as one list to prevent deleted entries from remaining in the database.
     db.CareerPeriods.RemoveRange(profile.Careers);
     profile.Careers = input.Careers.Select(x => new CareerPeriod
     {
@@ -186,6 +195,7 @@ api.MapPut("/scenarios/{id:guid}", async (Guid id, UpdateScenarioRequest request
     scenario.Assumptions.RetirementAge = request.Assumptions.RetirementAge;
     scenario.Assumptions.MonteCarloRuns = Math.Clamp(request.Assumptions.MonteCarloRuns, 50, 5_000);
     scenario.Assumptions.DefaultReturnVolatility = request.Assumptions.DefaultReturnVolatility;
+    // A profile can only have one baseline scenario at a time.
     if (scenario.IsBaseline)
         await db.Scenarios.Where(x => x.ProfileId == scenario.ProfileId && x.Id != scenario.Id).ExecuteUpdateAsync(x => x.SetProperty(y => y.IsBaseline, false), ct);
     await db.SaveChangesAsync(ct);
@@ -232,6 +242,7 @@ api.MapGet("/export", async (LifeLedgerDbContext db, CancellationToken ct) =>
 api.MapPost("/import", async (ImportRequest request, LifeLedgerDbContext db, CancellationToken ct) =>
 {
     if (request.Document.SchemaVersion != 1) return Results.BadRequest(new { message = "Unsupported export schema." });
+    // Replacement is explicit because imports can otherwise coexist with existing local data.
     if (request.ReplaceExisting)
     {
         await db.Scenarios.ExecuteDeleteAsync(ct);
@@ -253,12 +264,14 @@ api.MapPost("/import", async (ImportRequest request, LifeLedgerDbContext db, Can
 app.MapFallbackToFile("index.html");
 app.Run();
 
+/// <summary>Creates an empty baseline for a new scenario owned by the supplied profile.</summary>
 static FinancialScenario NewScenario(Profile profile, CreateScenarioRequest request) => new()
 {
     ProfileId = profile.Id, Name = request.Name.Trim(), Description = request.Description?.Trim() ?? string.Empty,
     StartsOn = DateOnly.FromDateTime(DateTime.UtcNow), Assumptions = new SimulationAssumptions()
 };
 
+/// <summary>Copies editable financial entries from a parent scenario while creating new entity identities.</summary>
 static FinancialScenario CloneScenario(FinancialScenario parent, CreateScenarioRequest request) => new()
 {
     ProfileId = parent.ProfileId, ParentScenarioId = parent.Id, Name = request.Name.Trim(), Description = request.Description?.Trim() ?? parent.Description,
@@ -272,6 +285,7 @@ static FinancialScenario CloneScenario(FinancialScenario parent, CreateScenarioR
     Events = parent.Events.Select(x => new ScenarioEvent { Name = x.Name, Kind = x.Kind, HappensOn = x.HappensOn, RecurrenceFrequency = x.RecurrenceFrequency, RecurrenceEndsOn = x.RecurrenceEndsOn, OneOffCashImpact = x.OneOffCashImpact, MonthlyCashImpact = x.MonthlyCashImpact, DurationMonths = x.DurationMonths, Notes = x.Notes }).ToList()
 };
 
+/// <summary>Assigns new local identities to imported data so it cannot overwrite existing records.</summary>
 static void ResetScenarioIds(FinancialScenario scenario, Guid profileId)
 {
     scenario.Id = Guid.NewGuid(); scenario.ProfileId = profileId; scenario.Profile = null; scenario.ParentScenarioId = null;
@@ -284,6 +298,7 @@ static void ResetScenarioIds(FinancialScenario scenario, Guid profileId)
     foreach (var item in scenario.Events) { item.Id = Guid.NewGuid(); item.ScenarioId = scenario.Id; item.Scenario = null; }
 }
 
+/// <summary>Maps consistent create, update, and delete endpoints for a scenario-owned collection.</summary>
 static void MapCollection<T>(RouteGroupBuilder api, string resource, Func<LifeLedgerDbContext, Guid, ValueTask<T?>> find, Func<T, Guid> getId, Action<T, Guid> setId, Func<T, Guid> getScenarioId, Action<T, Guid> setScenarioId) where T : class
 {
     api.MapPost($"/scenarios/{{scenarioId:guid}}/{resource}", async (Guid scenarioId, T entity, LifeLedgerDbContext db, CancellationToken ct) =>
@@ -299,6 +314,7 @@ static void MapCollection<T>(RouteGroupBuilder api, string resource, Func<LifeLe
         var existing = await find(db, id);
         if (existing is null) return Results.NotFound();
         setId(update, getId(existing));
+        // Preserve ownership from the persisted entity so a payload cannot move it to another scenario.
         var scenarioId = getScenarioId(existing);
         db.Entry(existing).CurrentValues.SetValues(update);
         setScenarioId(existing, scenarioId);
@@ -315,4 +331,5 @@ static void MapCollection<T>(RouteGroupBuilder api, string resource, Func<LifeLe
     });
 }
 
+/// <summary>Marker type that enables in-process integration tests to host the application.</summary>
 public partial class Program { }

@@ -3,12 +3,15 @@ using Microsoft.EntityFrameworkCore;
 
 namespace LifeLedger.Api.Data;
 
+/// <summary>Creates a single local sample plan when a new database contains no profile.</summary>
 public static class DemoDataSeeder
 {
+    /// <summary>Adds the sample profile and baseline scenario unless a profile already exists.</summary>
     public static async Task SeedAsync(LifeLedgerDbContext db, CancellationToken cancellationToken = default)
     {
         if (await db.Profiles.AnyAsync(cancellationToken)) return;
 
+        // The sample stays entirely local and gives first-time users a meaningful dashboard.
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
         var profile = new Profile
         {
