@@ -33,4 +33,5 @@ export const api = {
   deleteItem: (resource: string, id: string) => request<void>(`/${resource}/${id}`, { method: 'DELETE' }),
   exportData: () => request<LifeLedgerExport>('/export'),
   importData: (document: LifeLedgerExport, replaceExisting: boolean) => request<{ id: string }>('/import', { method: 'POST', body: JSON.stringify({ document, replaceExisting }) }),
+  analyseExpenseCsv: (csv: string) => request<{ transactions: number; months: number; totalExpenses: number; averageMonthlyExpenses: number; currency: string; categories: Array<{ name: string; total: number }> }>('/imports/csv/expenses', { method: 'POST', body: JSON.stringify({ csv }) }),
 }

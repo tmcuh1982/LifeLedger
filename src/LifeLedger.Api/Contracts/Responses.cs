@@ -42,5 +42,11 @@ public sealed record NetWorthSnapshotResponse(DateTimeOffset CapturedAt, decimal
 /// <summary>Returns the result of a deterministic, historical, or Monte Carlo simulation.</summary>
 public sealed record SimulationResponse(SimulationMode Mode, int Runs, decimal ProbabilityOfSuccess, IReadOnlyList<ProjectionYear> Timeline, IReadOnlyList<decimal> TerminalNetWorths, IReadOnlyList<string> Warnings);
 
+/// <summary>Summarises spending detected in a bank CSV without retaining the imported transactions.</summary>
+public sealed record CsvExpenseImportResponse(int Transactions, int Months, decimal TotalExpenses, decimal AverageMonthlyExpenses, string Currency, IReadOnlyList<CsvExpenseCategory> Categories);
+
+/// <summary>Groups imported expenses using a transparent local keyword rule.</summary>
+public sealed record CsvExpenseCategory(string Name, decimal Total);
+
 /// <summary>Returns a scenario with the profile required to interpret it.</summary>
 public sealed record ScenarioDetail(FinancialScenario Scenario, Profile Profile);

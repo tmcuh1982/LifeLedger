@@ -17,5 +17,8 @@ public sealed record SimulationRequest(SimulationMode Mode = SimulationMode.Dete
 /// <summary>Requests import of a previously exported financial plan.</summary>
 public sealed record ImportRequest(LifeLedgerExport Document, bool ReplaceExisting = false);
 
+/// <summary>Supplies CSV text from a bank or Revolut export for local expense analysis.</summary>
+public sealed record CsvExpenseImportRequest(string Csv);
+
 /// <summary>Portable, versioned representation of a profile and its scenarios.</summary>
 public sealed record LifeLedgerExport(int SchemaVersion, DateTimeOffset ExportedAt, Profile Profile, IReadOnlyList<FinancialScenario> Scenarios);

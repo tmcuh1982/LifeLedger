@@ -1,4 +1,5 @@
 import { ChangeEvent, useState } from 'react'
+import { api } from '../api'
 import type { Locale } from '../i18n'
 import type { LifeLedgerExport, Profile } from '../types'
 
@@ -51,6 +52,7 @@ export function Settings({ locale, profile, saving, onClose, onSaveProfile, onEx
   const [restoring, setRestoring] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [message, setMessage] = useState<string>()
+  const [csvSummary, setCsvSummary] = useState<{ transactions: number; months: number; totalExpenses: number; averageMonthlyExpenses: number; currency: string; categories: Array<{ name: string; total: number }> }>()
 
   const currentAge = ageOnToday(birthDate)
   const canSaveProfile = profile && (currency !== profile.baseCurrency || birthDate !== profile.birthDate || sex !== profile.sex || expectedLifespan !== profile.expectedLifespan)
@@ -116,6 +118,14 @@ export function Settings({ locale, profile, saving, onClose, onSaveProfile, onEx
     }
   }
 
+  async function analyseCsv(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0]
+    if (!file) return
+    try { setCsvSummary(await api.analyseExpenseCsv(await file.text())) }
+    catch (reason) { setMessage(reason instanceof Error ? reason.message : tr(locale, 'Unable to read this CSV file.', 'Impossible de lire ce fichier CSV.')) }
+    finally { event.target.value = '' }
+  }
+
   return (
     <div className="fixed inset-0 z-30 overflow-y-auto bg-inkDeep/70 p-4 backdrop-blur-sm">
       <section aria-modal="true" aria-label={tr(locale, 'Settings', 'Paramètres')} className="glass mx-auto my-6 w-full max-w-xl rounded-3xl p-6" role="dialog">
@@ -179,6 +189,13 @@ export function Settings({ locale, profile, saving, onClose, onSaveProfile, onEx
             </div>
             <button className="ghost-button mt-4" disabled={saving || !canSaveProfile || !birthDate} onClick={() => profile && void onSaveProfile({ ...profile, baseCurrency: currency, birthDate, sex, expectedLifespan })}>{saving ? tr(locale, 'Saving…', 'Enregistrement…') : tr(locale, 'Save settings', 'Enregistrer les paramètres')}</button>
           </article>}
+
+          <article className="rounded-2xl border border-white/10 bg-white/5 p-4">
+            <p className="text-sm font-medium text-mist">{tr(locale, 'Import bank or Revolut CSV', 'Importer un CSV bancaire ou Revolut')}</p>
+            <p className="mt-1 text-xs leading-5 text-muted">{tr(locale, 'The file is analysed only in memory on your local server. Transactions are not saved.', 'Le fichier est analysé uniquement en mémoire sur votre serveur local. Les transactions ne sont pas enregistrées.')}</p>
+            <label className="ghost-button mt-3 inline-flex cursor-pointer">{tr(locale, 'Choose CSV file', 'Choisir un fichier CSV')}<input accept=".csv,text/csv" className="sr-only" type="file" onChange={(event) => void analyseCsv(event)} /></label>
+            {csvSummary && <div className="mt-4 rounded-xl border border-sky/20 bg-sky/10 p-3"><p className="text-sm font-semibold text-sky">{tr(locale, 'Estimated monthly expenses', 'Dépenses mensuelles estimées')} : {new Intl.NumberFormat(locale, { style: 'currency', currency: csvSummary.currency, maximumFractionDigits: 0 }).format(csvSummary.averageMonthlyExpenses)}</p><p className="mt-1 text-xs text-muted">{csvSummary.transactions} {tr(locale, 'outgoing transactions across', 'transactions sortantes sur')} {csvSummary.months} {tr(locale, 'month(s).', 'mois.')}</p><div className="mt-3 space-y-1 text-xs text-mist">{csvSummary.categories.slice(0, 4).map((category) => <p key={category.name}>{category.name} · {new Intl.NumberFormat(locale, { style: 'currency', currency: csvSummary.currency, maximumFractionDigits: 0 }).format(category.total)}</p>)}</div></div>}
+          </article>
 
           {profile && <article className="rounded-2xl border border-white/10 bg-white/5 p-4">
             <p className="text-sm font-medium text-mist">{tr(locale, 'Export my wealth', 'Exporter mon patrimoine')}</p>

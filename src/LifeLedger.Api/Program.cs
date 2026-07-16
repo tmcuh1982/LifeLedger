@@ -53,6 +53,7 @@ builder.Services.AddScoped<IScenarioRepository, ScenarioRepository>();
 builder.Services.AddScoped<IDatabaseMigrator, DatabaseMigrator>();
 builder.Services.AddScoped<IDataSchemaMigrationService, DataSchemaMigrationService>();
 builder.Services.AddScoped<IDataImportService, DataImportService>();
+builder.Services.AddSingleton<ICsvExpenseImportService, CsvExpenseImportService>();
 builder.Services.AddScoped<IMarketDataService, MarketDataService>();
 builder.Services.AddScoped<INetWorthHistoryService, NetWorthHistoryService>();
 builder.Services.AddHttpClient();
@@ -108,6 +109,11 @@ var api = app.MapGroup("/api");
 api.MapGet("/health", (PluginRegistry plugins) => Results.Ok(new { status = "ok", storage = provider, plugins = plugins.Plugins }));
 api.MapGet("/countries", (ICountryCatalog countries) => Results.Ok(countries.List()));
 api.MapGet("/plugins", (PluginRegistry plugins) => Results.Ok(plugins.Plugins));
+api.MapPost("/imports/csv/expenses", (CsvExpenseImportRequest request, ICsvExpenseImportService importer) =>
+{
+    try { return Results.Ok(importer.Analyse(request.Csv)); }
+    catch (ArgumentException exception) { return Results.ValidationProblem(new Dictionary<string, string[]> { ["csv"] = [exception.Message] }); }
+});
 api.MapGet("/currencies", (ICurrencyService currencies) => Results.Ok(currencies.List()));
 api.MapPost("/currencies/refresh", async (ICurrencyService currencies, CancellationToken ct) => Results.Ok(await currencies.RefreshAsync(ct)));
 api.MapPut("/currencies/{code}", (string code, UpsertCurrencyRateRequest request, ICurrencyService currencies) =>
