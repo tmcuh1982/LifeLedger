@@ -167,4 +167,47 @@ public sealed class IncomeEndpointTests : IClassFixture<LifeLedgerApiFactory>
         Assert.Equal(7_500m, snapshot.NetWorth);
         Assert.Equal("EUR", snapshot.Currency);
     }
+
+    /// <summary>Reserves a planned one-off expense monthly and spends it only in the month in which it is due.</summary>
+    [Fact]
+    public async Task Planned_expense_is_funded_monthly_before_its_due_date()
+    {
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var profileId = Guid.NewGuid();
+        var scenarioId = Guid.NewGuid();
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var database = scope.ServiceProvider.GetRequiredService<LifeLedgerDbContext>();
+        var profile = new Profile { Id = profileId, DisplayName = "Sinking fund profile", BirthDate = today.AddYears(-35), BaseCurrency = "EUR" };
+        var scenario = new FinancialScenario
+        {
+            Id = scenarioId,
+            Profile = profile,
+            Name = "Planned holiday",
+            IsBaseline = true,
+            StartsOn = today,
+            Assumptions = new SimulationAssumptions { InflationRate = 0m },
+            Expenses =
+            [
+                new Expense
+                {
+                    Name = "Summer holiday",
+                    Kind = ExpenseKind.Exceptional,
+                    MonthlyAmount = 1_200m,
+                    SaveInAdvance = true,
+                    SavingsStartsOn = today,
+                    StartsOn = today.AddMonths(5),
+                    Currency = "EUR"
+                }
+            ]
+        };
+        database.Scenarios.Add(scenario);
+        await database.SaveChangesAsync();
+
+        var engine = scope.ServiceProvider.GetRequiredService<IProjectionEngine>();
+        var result = engine.Simulate(scenario, new SimulationRequest(SimulationMode.Deterministic, Years: 1));
+
+        var firstFutureYear = result.Timeline[1];
+        Assert.Equal(1_200m, firstFutureYear.PlannedExpenseSavings);
+        Assert.Equal(0m, firstFutureYear.PlannedExpenseFundBalance);
+    }
 }

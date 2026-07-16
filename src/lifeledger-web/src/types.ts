@@ -19,6 +19,8 @@ export interface ProjectionYear {
   expenses: number
   passiveIncome: number
   inflationAdjustedNetWorth: number
+  plannedExpenseSavings: number
+  plannedExpenseFundBalance: number
 }
 
 export interface NetWorthSnapshot {

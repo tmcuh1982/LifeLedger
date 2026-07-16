@@ -113,12 +113,11 @@ public sealed class ProjectionEngine(ICurrencyService currencies, IEnumerable<IP
         return new SimulationResponse(SimulationMode.MonteCarlo, runs, probability, deterministicTimeline, terminalValues.Order().ToArray(), warnings.Distinct().ToArray());
     }
 
-    /// <summary>Projects annual cash flow, assets, debt, and purchasing power for one simulation path.</summary>
+    /// <summary>Projects monthly cash flow internally and returns one clear summary row for each future year.</summary>
     private IReadOnlyList<ProjectionYear> Project(FinancialScenario scenario, int years, SimulationMode mode, Random? random)
     {
         var profile = scenario.Profile!;
         var assumptions = scenario.Assumptions;
-        var startAge = AgeAt(profile.BirthDate, scenario.StartsOn);
         // All calculations are consolidated in the profile's base currency before aggregation.
         var assetValue = scenario.Assets.Sum(x => ToBase(scenario, x.CurrentValue, x.Currency));
         var debt = scenario.Liabilities.Sum(x => ToBase(scenario, x.OutstandingBalance, x.Currency));
@@ -127,60 +126,91 @@ public sealed class ProjectionEngine(ICurrencyService currencies, IEnumerable<IP
         var weightedVolatility = WeightedVolatility(scenario.Assets, scenario, assumptions.DefaultReturnVolatility);
         var rows = new List<ProjectionYear>(years + 1);
         var inflationIndex = 1m;
+        var sinkingFundBalances = new Dictionary<Guid, decimal>();
 
-        for (var year = 0; year <= years; year++)
+        // The initial row is an exact snapshot, before any future income or expense is applied.
+        rows.Add(new ProjectionYear(
+            scenario.StartsOn.Year,
+            AgeAt(profile.BirthDate, scenario.StartsOn),
+            Math.Round(initialNetWorth, 2),
+            0m,
+            0m,
+            0m,
+            0m,
+            Math.Round(initialNetWorth, 2),
+            0m,
+            0m));
+
+        for (var year = 1; year <= years; year++)
         {
-            var date = scenario.StartsOn.AddYears(year);
-            var age = startAge + year;
             var annualInflation = mode == SimulationMode.Historical ? HistoricalInflation[year % HistoricalInflation.Length] : assumptions.InflationRate;
-            if (year > 0) inflationIndex *= 1m + annualInflation;
-            var income = AnnualIncome(scenario, date, age, assumptions.RetirementAge, assumptions.InflationRate);
-            var expenses = AnnualExpenses(scenario, date, year, assumptions.InflationRate);
-            var contributions = AnnualContributions(scenario, date);
-            var debtPayment = AnnualDebtPayments(scenario, date);
-            var eventImpact = AnnualEventImpact(scenario, date);
-            var publicPension = age >= assumptions.RetirementAge ? GetRetirementIncome(scenario) * 12m : 0m;
-            var passiveIncome = AnnualPassiveIncome(scenario, date, age, assumptions.RetirementAge);
-            // Plugins only add deltas, preserving the original scenario entered by the user.
-            var adjustment = new ProjectionAdjustment();
-            var context = new ProjectionContext(scenario, year, date, age, annualInflation);
-            foreach (var modifier in _modifiers) modifier.Apply(context, adjustment);
-            income += publicPension + adjustment.IncomeDelta;
-            expenses += adjustment.ExpenseDelta;
-            var cashFlow = income + passiveIncome - expenses - debtPayment - contributions + eventImpact;
-
-            if (year > 0)
+            var annualReturn = mode switch
             {
-                var annualReturn = mode switch
-                {
-                    SimulationMode.Historical => HistoricalReturns[year % HistoricalReturns.Length],
-                    SimulationMode.MonteCarlo => weightedReturn + Normal(random!) * weightedVolatility,
-                    _ => weightedReturn
-                };
-                assetValue = Math.Max(0m, assetValue * (1m + annualReturn) + cashFlow + contributions + adjustment.NetWorthDelta);
-                debt = AdvanceDebt(scenario, debt, date);
+                SimulationMode.Historical => HistoricalReturns[year % HistoricalReturns.Length],
+                SimulationMode.MonteCarlo => weightedReturn + Normal(random!) * weightedVolatility,
+                _ => weightedReturn
+            };
+            var monthlyReturn = MonthlyRate(annualReturn);
+            var monthlyInflation = MonthlyRate(annualInflation);
+            var contextDate = scenario.StartsOn.AddYears(year);
+            var contextAge = AgeAt(profile.BirthDate, contextDate);
+            // Plugins remain annual extension points; their deltas are distributed across the twelve monthly steps.
+            var adjustment = new ProjectionAdjustment();
+            var context = new ProjectionContext(scenario, year, contextDate, contextAge, annualInflation);
+            foreach (var modifier in _modifiers) modifier.Apply(context, adjustment);
+
+            var cashFlow = 0m;
+            var income = 0m;
+            var expenses = 0m;
+            var passiveIncome = 0m;
+            var plannedSavings = 0m;
+            for (var month = 0; month < 12; month++)
+            {
+                var date = scenario.StartsOn.AddMonths((year - 1) * 12 + month);
+                var age = AgeAt(profile.BirthDate, date);
+                var monthlyIncome = AnnualIncome(scenario, date, age, assumptions.RetirementAge, assumptions.InflationRate) / 12m;
+                var monthlyPassiveIncome = AnnualPassiveIncome(scenario, date, age, assumptions.RetirementAge) / 12m;
+                var monthlyPublicPension = age >= assumptions.RetirementAge ? GetRetirementIncome(scenario) : 0m;
+                var monthlyExpenses = MonthlyExpenses(scenario, date, MonthsBetween(scenario.StartsOn, date), assumptions.InflationRate);
+                var monthlyContributions = MonthlyContributions(scenario, date);
+                var monthlyDebtPayment = MonthlyDebtPayments(scenario, date);
+                var monthlyEventImpact = MonthlyEventImpact(scenario, date);
+                var (monthlySavings, duePayment) = ProcessSinkingFunds(scenario, date, sinkingFundBalances);
+                var monthlyCashFlow = monthlyIncome + monthlyPassiveIncome + monthlyPublicPension + adjustment.IncomeDelta / 12m
+                    - monthlyExpenses - monthlyDebtPayment - monthlyContributions - monthlySavings - adjustment.ExpenseDelta / 12m + monthlyEventImpact;
+
+                // Savings and investment contributions remain assets until spent, while the planned purchase is paid only in its due month.
+                assetValue = Math.Max(0m, assetValue * (1m + monthlyReturn) + monthlyCashFlow + monthlyContributions + monthlySavings - duePayment + (month == 11 ? adjustment.NetWorthDelta : 0m));
+                debt = AdvanceDebtMonthly(scenario, debt, date);
+                inflationIndex *= 1m + monthlyInflation;
+
+                cashFlow += monthlyCashFlow;
+                income += monthlyIncome + monthlyPassiveIncome + monthlyPublicPension + adjustment.IncomeDelta / 12m;
+                expenses += monthlyExpenses + monthlyDebtPayment + monthlyContributions + monthlySavings + adjustment.ExpenseDelta / 12m;
+                passiveIncome += monthlyPassiveIncome;
+                plannedSavings += monthlySavings;
             }
 
             var netWorth = assetValue - debt;
             rows.Add(new ProjectionYear(
-                date.Year,
-                age,
+                contextDate.Year,
+                contextAge,
                 Math.Round(netWorth, 2),
                 Math.Round(cashFlow, 2),
-                Math.Round(income + passiveIncome, 2),
-                Math.Round(expenses + debtPayment + contributions, 2),
+                Math.Round(income, 2),
+                Math.Round(expenses, 2),
                 Math.Round(passiveIncome, 2),
-                Math.Round(netWorth / inflationIndex, 2)));
+                Math.Round(netWorth / inflationIndex, 2),
+                Math.Round(plannedSavings, 2),
+                Math.Round(sinkingFundBalances.Values.Sum(), 2)));
         }
 
-        // Keep the current row precisely tied to what the user has entered.
-        rows[0] = rows[0] with { NetWorth = initialNetWorth, InflationAdjustedNetWorth = initialNetWorth };
         return rows;
     }
 
     /// <summary>Calculates annual non-passive income after growth, inflation indexing, and declared tax.</summary>
     private decimal AnnualIncome(FinancialScenario scenario, DateOnly date, int age, int retirementAge, decimal inflationRate) => scenario.Incomes
-        .Where(x => x.Kind is not (IncomeKind.Rental or IncomeKind.Dividends or IncomeKind.Royalties))
+        .Where(x => x.Kind is not (IncomeKind.Rental or IncomeKind.Dividends or IncomeKind.Royalties or IncomeKind.Pension))
         .Where(x => IsActive(x.StartsOn, x.EndsOn, date) && (x.Kind != IncomeKind.Salary || age < retirementAge))
         .Sum(x =>
         {
@@ -201,72 +231,108 @@ public sealed class ProjectionEngine(ICurrencyService currencies, IEnumerable<IP
         ? grossIncome * (1m - Math.Clamp(income.TaxRate, 0m, 1m))
         : grossIncome;
 
-    /// <summary>Calculates annual expenses, including recurrence and optional inflation indexing.</summary>
-    private decimal AnnualExpenses(FinancialScenario scenario, DateOnly date, int year, decimal inflationRate) => scenario.Expenses
-        .Where(x => IsActive(x.StartsOn, x.EndsOn, date))
-        .Sum(x => ToBase(scenario, x.MonthlyAmount * OccurrencesPerYear(x, date) * (x.IndexedToInflation ? Pow(1m + inflationRate, Math.Max(0, year)) : 1m), x.Currency));
+    /// <summary>Calculates ordinary expenses for one month; one-off expenses are charged only in their due month.</summary>
+    private decimal MonthlyExpenses(FinancialScenario scenario, DateOnly date, int elapsedMonths, decimal inflationRate) => scenario.Expenses
+        .Where(expense => expense.Kind == ExpenseKind.Recurring
+            ? IsActive(expense.StartsOn, expense.EndsOn, date)
+            : SameMonth(expense.StartsOn, date) && !expense.SaveInAdvance)
+        .Sum(expense => ToBase(
+            scenario,
+            expense.MonthlyAmount * OccurrencesPerMonth(expense, date) * (expense.IndexedToInflation ? DecimalPow(1m + inflationRate, elapsedMonths / 12m) : 1m),
+            expense.Currency));
 
-    /// <summary>Converts an expense recurrence into its expected number of occurrences in one year.</summary>
-    private static decimal OccurrencesPerYear(Expense expense, DateOnly date)
+    /// <summary>Converts an expense recurrence into the expected occurrences in one projection month.</summary>
+    private static decimal OccurrencesPerMonth(Expense expense, DateOnly date)
     {
         if (expense.Kind == ExpenseKind.Exceptional) return 1m;
 
         return expense.Frequency switch
         {
-            RecurrenceFrequency.Daily => 365.25m,
-            RecurrenceFrequency.Weekly => 52.18m,
-            RecurrenceFrequency.EveryTwoWeeks => 26.09m,
-            RecurrenceFrequency.Monthly => 12m,
-            RecurrenceFrequency.Quarterly => 4m,
-            RecurrenceFrequency.Yearly => 1m,
-            RecurrenceFrequency.EveryFiveYears => (date.Year - expense.StartsOn.Year) % 5 == 0 ? 1m : 0m,
-            _ => 12m
+            RecurrenceFrequency.Daily => DateTime.DaysInMonth(date.Year, date.Month),
+            RecurrenceFrequency.Weekly => DateTime.DaysInMonth(date.Year, date.Month) / 7m,
+            RecurrenceFrequency.EveryTwoWeeks => DateTime.DaysInMonth(date.Year, date.Month) / 14m,
+            RecurrenceFrequency.Monthly => 1m,
+            RecurrenceFrequency.Quarterly => MonthsBetween(expense.StartsOn, date) % 3 == 0 ? 1m : 0m,
+            RecurrenceFrequency.Yearly => MonthsBetween(expense.StartsOn, date) % 12 == 0 ? 1m : 0m,
+            RecurrenceFrequency.EveryFiveYears => MonthsBetween(expense.StartsOn, date) % 60 == 0 ? 1m : 0m,
+            _ => 1m
         };
     }
 
-    /// <summary>Calculates annual planned contributions that are active on the projection date.</summary>
-    private static decimal AnnualContributions(FinancialScenario scenario, DateOnly date) => scenario.Investments
-        .Where(x => IsActive(x.StartsOn, x.EndsOn, date)).Sum(x => x.MonthlyContribution * 12m);
+    /// <summary>Calculates investment contributions active in the selected month.</summary>
+    private static decimal MonthlyContributions(FinancialScenario scenario, DateOnly date) => scenario.Investments
+        .Where(x => IsActive(x.StartsOn, x.EndsOn, date)).Sum(x => x.MonthlyContribution);
 
-    /// <summary>Calculates annual payments for liabilities that have not yet been paid off.</summary>
-    private decimal AnnualDebtPayments(FinancialScenario scenario, DateOnly date) => scenario.Liabilities
-        .Where(x => x.PaidOffOn is null || date <= x.PaidOffOn).Sum(x => ToBase(scenario, x.MonthlyPayment * 12m, x.Currency));
+    /// <summary>Calculates debt payments due in the selected month.</summary>
+    private decimal MonthlyDebtPayments(FinancialScenario scenario, DateOnly date) => scenario.Liabilities
+        .Where(x => x.PaidOffOn is null || date <= x.PaidOffOn).Sum(x => ToBase(scenario, x.MonthlyPayment, x.Currency));
 
-    /// <summary>Calculates the annual cash impact of both one-off and recurring life events.</summary>
-    private static decimal AnnualEventImpact(FinancialScenario scenario, DateOnly date) => scenario.Events.Sum(e =>
+    /// <summary>Calculates the cash impact of life events that occur in the selected month.</summary>
+    private static decimal MonthlyEventImpact(FinancialScenario scenario, DateOnly date) => scenario.Events.Sum(e =>
     {
         if (e.RecurrenceFrequency is { } frequency)
         {
             if (date < e.HappensOn || (e.RecurrenceEndsOn is { } endsOn && date > endsOn)) return 0m;
-            return e.OneOffCashImpact * EventOccurrencesPerYear(frequency, e.HappensOn, date);
+            return e.OneOffCashImpact * EventOccurrencesPerMonth(frequency, e.HappensOn, date);
         }
 
-        var oneOff = e.HappensOn.Year == date.Year ? e.OneOffCashImpact : 0m;
-        var recurring = date >= e.HappensOn && (e.DurationMonths == 0 || date <= e.HappensOn.AddMonths(e.DurationMonths)) ? e.MonthlyCashImpact * 12m : 0m;
+        var oneOff = SameMonth(e.HappensOn, date) ? e.OneOffCashImpact : 0m;
+        var recurring = date >= e.HappensOn && (e.DurationMonths == 0 || date <= e.HappensOn.AddMonths(e.DurationMonths)) ? e.MonthlyCashImpact : 0m;
         return oneOff + recurring;
     });
 
-    /// <summary>Converts an event recurrence into its expected number of occurrences in one year.</summary>
-    private static decimal EventOccurrencesPerYear(RecurrenceFrequency frequency, DateOnly startsOn, DateOnly date) => frequency switch
+    /// <summary>Converts an event recurrence into the expected occurrences in one projection month.</summary>
+    private static decimal EventOccurrencesPerMonth(RecurrenceFrequency frequency, DateOnly startsOn, DateOnly date) => frequency switch
     {
-        RecurrenceFrequency.Daily => 365.25m,
-        RecurrenceFrequency.Weekly => 52.18m,
-        RecurrenceFrequency.EveryTwoWeeks => 26.09m,
-        RecurrenceFrequency.Monthly => 12m,
-        RecurrenceFrequency.Quarterly => 4m,
-        RecurrenceFrequency.Yearly => 1m,
-        RecurrenceFrequency.EveryFiveYears => (date.Year - startsOn.Year) % 5 == 0 ? 1m : 0m,
+        RecurrenceFrequency.Daily => DateTime.DaysInMonth(date.Year, date.Month),
+        RecurrenceFrequency.Weekly => DateTime.DaysInMonth(date.Year, date.Month) / 7m,
+        RecurrenceFrequency.EveryTwoWeeks => DateTime.DaysInMonth(date.Year, date.Month) / 14m,
+        RecurrenceFrequency.Monthly => 1m,
+        RecurrenceFrequency.Quarterly => MonthsBetween(startsOn, date) % 3 == 0 ? 1m : 0m,
+        RecurrenceFrequency.Yearly => MonthsBetween(startsOn, date) % 12 == 0 ? 1m : 0m,
+        RecurrenceFrequency.EveryFiveYears => MonthsBetween(startsOn, date) % 60 == 0 ? 1m : 0m,
         _ => 1m
     };
 
-    /// <summary>Reduces outstanding debt by annual payments after applying a weighted interest rate.</summary>
-    private decimal AdvanceDebt(FinancialScenario scenario, decimal totalDebt, DateOnly date)
+    /// <summary>Reserves one monthly contribution per planned one-off expense and releases it when the expense is due.</summary>
+    private (decimal MonthlySavings, decimal DuePayments) ProcessSinkingFunds(
+        FinancialScenario scenario,
+        DateOnly date,
+        IDictionary<Guid, decimal> balances)
+    {
+        var monthlySavings = 0m;
+        var duePayments = 0m;
+        foreach (var expense in scenario.Expenses.Where(item => item.Kind == ExpenseKind.Exceptional && item.SaveInAdvance))
+        {
+            var savingsStart = expense.SavingsStartsOn is { } configuredStart && configuredStart > scenario.StartsOn
+                ? configuredStart
+                : scenario.StartsOn;
+            var totalMonths = MonthsBetween(savingsStart, expense.StartsOn) + 1;
+            if (totalMonths > 0 && IsMonthInRange(date, savingsStart, expense.StartsOn))
+            {
+                var contribution = ToBase(scenario, expense.MonthlyAmount, expense.Currency) / totalMonths;
+                balances.TryGetValue(expense.Id, out var currentBalance);
+                balances[expense.Id] = currentBalance + contribution;
+                monthlySavings += contribution;
+            }
+
+            if (!SameMonth(date, expense.StartsOn)) continue;
+            var payment = ToBase(scenario, expense.MonthlyAmount, expense.Currency);
+            duePayments += payment;
+            balances.TryGetValue(expense.Id, out var savedAmount);
+            balances[expense.Id] = Math.Max(0m, savedAmount - payment);
+        }
+        return (monthlySavings, duePayments);
+    }
+
+    /// <summary>Reduces outstanding debt by one monthly payment after applying a weighted monthly interest rate.</summary>
+    private decimal AdvanceDebtMonthly(FinancialScenario scenario, decimal totalDebt, DateOnly date)
     {
         var active = scenario.Liabilities.Where(x => x.PaidOffOn is null || date <= x.PaidOffOn).ToArray();
         if (active.Length == 0) return 0m;
         var principal = active.Sum(x => ToBase(scenario, x.OutstandingBalance, x.Currency));
         var weightedRate = principal == 0 ? 0m : active.Sum(x => ToBase(scenario, x.OutstandingBalance, x.Currency) * x.InterestRate) / principal;
-        return Math.Max(0m, totalDebt * (1m + weightedRate) - active.Sum(x => ToBase(scenario, x.MonthlyPayment * 12m, x.Currency)));
+        return Math.Max(0m, totalDebt * (1m + weightedRate / 12m) - active.Sum(x => ToBase(scenario, x.MonthlyPayment, x.Currency)));
     }
 
     /// <summary>Combines declared pension income with estimates from all career periods.</summary>
@@ -325,6 +391,21 @@ public sealed class ProjectionEngine(ICurrencyService currencies, IEnumerable<IP
 
     /// <summary>Returns whole calendar years elapsed between two dates, never negative.</summary>
     private static int YearsBetween(DateOnly start, DateOnly end) => Math.Max(0, end.Year - start.Year);
+
+    /// <summary>Returns calendar months elapsed between two dates, never negative.</summary>
+    private static int MonthsBetween(DateOnly start, DateOnly end) => Math.Max(0, (end.Year - start.Year) * 12 + end.Month - start.Month);
+
+    /// <summary>Checks whether two dates are part of the same calendar month.</summary>
+    private static bool SameMonth(DateOnly left, DateOnly right) => left.Year == right.Year && left.Month == right.Month;
+
+    /// <summary>Checks whether a date's month falls between two inclusive planning months.</summary>
+    private static bool IsMonthInRange(DateOnly date, DateOnly startsOn, DateOnly endsOn) => MonthsBetween(startsOn, date) <= MonthsBetween(startsOn, endsOn) && date >= startsOn;
+
+    /// <summary>Converts an annual rate into its compounded monthly equivalent.</summary>
+    private static decimal MonthlyRate(decimal annualRate) => DecimalPow(1m + annualRate, 1m / 12m) - 1m;
+
+    /// <summary>Raises a positive decimal value to a fractional power for monthly compounding.</summary>
+    private static decimal DecimalPow(decimal value, decimal exponent) => value <= 0m ? 0m : (decimal)Math.Pow((double)value, (double)exponent);
 
     /// <summary>Raises a decimal value to a non-negative integer power without floating-point conversion.</summary>
     private static decimal Pow(decimal value, int exponent) { var output = 1m; for (var i = 0; i < exponent; i++) output *= value; return output; }

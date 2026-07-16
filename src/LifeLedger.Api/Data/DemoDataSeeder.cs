@@ -62,7 +62,9 @@ public static class DemoDataSeeder
             Expenses =
             [
                 new Expense { Name = "Living costs", Kind = ExpenseKind.Recurring, MonthlyAmount = 2800, IndexedToInflation = true, StartsOn = today, Currency = "EUR" },
-                new Expense { Name = "Family & travel", Kind = ExpenseKind.Recurring, MonthlyAmount = 600, IndexedToInflation = true, StartsOn = today, Currency = "EUR" }
+                new Expense { Name = "Family & travel", Kind = ExpenseKind.Recurring, MonthlyAmount = 600, IndexedToInflation = true, StartsOn = today, Currency = "EUR" },
+                // This illustrates a future expense that is reserved monthly but paid only when the holiday happens.
+                new Expense { Name = "Summer holiday fund", Kind = ExpenseKind.Exceptional, MonthlyAmount = 2400, SaveInAdvance = true, SavingsStartsOn = today, StartsOn = today.AddMonths(8), Currency = "EUR" }
             ],
             Investments =
             [

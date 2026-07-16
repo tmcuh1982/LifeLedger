@@ -187,6 +187,10 @@ public sealed class Expense
     public decimal MonthlyAmount { get; set; }
     /// <summary>Whether the amount rises with the scenario inflation rate.</summary>
     public bool IndexedToInflation { get; set; } = true;
+    /// <summary>Whether a one-off expense is funded gradually in a dedicated monthly envelope before it is due.</summary>
+    public bool SaveInAdvance { get; set; }
+    /// <summary>First month in which LifeLedger should reserve money for a one-off expense; null starts with the scenario.</summary>
+    public DateOnly? SavingsStartsOn { get; set; }
     /// <summary>First date on which the expense is active.</summary>
     public DateOnly StartsOn { get; set; }
     /// <summary>Last active date; null means it continues indefinitely.</summary>

@@ -30,7 +30,9 @@ public sealed record ProjectionYear(
     decimal Income,
     decimal Expenses,
     decimal PassiveIncome,
-    decimal InflationAdjustedNetWorth);
+    decimal InflationAdjustedNetWorth,
+    decimal PlannedExpenseSavings,
+    decimal PlannedExpenseFundBalance);
 /// <summary>Represents one asset group in the portfolio allocation.</summary>
 public sealed record AllocationSlice(string Name, AssetKind Kind, decimal Value, decimal Percentage);
 
