@@ -10,6 +10,8 @@ public sealed class LifeLedgerDbContext(DbContextOptions<LifeLedgerDbContext> op
     public DbSet<Profile> Profiles => Set<Profile>();
     /// <summary>Cross-country career periods.</summary>
     public DbSet<CareerPeriod> CareerPeriods => Set<CareerPeriod>();
+    /// <summary>Locally captured net-worth history for profiles.</summary>
+    public DbSet<NetWorthSnapshot> NetWorthSnapshots => Set<NetWorthSnapshot>();
     /// <summary>Financial scenarios owned by profiles.</summary>
     public DbSet<FinancialScenario> Scenarios => Set<FinancialScenario>();
     /// <summary>Per-scenario projection assumptions.</summary>
@@ -42,6 +44,8 @@ public sealed class LifeLedgerDbContext(DbContextOptions<LifeLedgerDbContext> op
         }
 
         modelBuilder.Entity<Profile>().HasIndex(x => x.DisplayName);
+        modelBuilder.Entity<NetWorthSnapshot>().HasIndex(x => new { x.ProfileId, x.CapturedAt });
+        modelBuilder.Entity<NetWorthSnapshot>().HasOne(x => x.Profile).WithMany(x => x.NetWorthSnapshots).HasForeignKey(x => x.ProfileId).OnDelete(DeleteBehavior.Cascade);
         modelBuilder.Entity<FinancialScenario>().HasIndex(x => new { x.ProfileId, x.IsBaseline });
         modelBuilder.Entity<FinancialScenario>().HasOne(x => x.Assumptions)
             .WithOne(x => x.Scenario)

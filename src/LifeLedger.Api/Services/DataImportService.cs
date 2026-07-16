@@ -33,6 +33,7 @@ public sealed class DataImportService(LifeLedgerDbContext db) : IDataImportServi
         {
             // Delete dependants explicitly so the operation also works with strict foreign-key configurations.
             await db.AssetQuoteSnapshots.ExecuteDeleteAsync(cancellationToken);
+            await db.NetWorthSnapshots.ExecuteDeleteAsync(cancellationToken);
             await db.Scenarios.ExecuteDeleteAsync(cancellationToken);
             await db.Profiles.ExecuteDeleteAsync(cancellationToken);
         }

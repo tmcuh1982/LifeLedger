@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using LifeLedger.Api.Contracts;
 using LifeLedger.Api.Data;
 using LifeLedger.Api.Domain;
+using LifeLedger.Api.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
@@ -78,5 +79,59 @@ public sealed class IncomeEndpointTests : IClassFixture<LifeLedgerApiFactory>
         await using var verificationScope = _factory.Services.CreateAsyncScope();
         var verificationDatabase = verificationScope.ServiceProvider.GetRequiredService<LifeLedgerDbContext>();
         Assert.True(await verificationDatabase.Profiles.AnyAsync(profile => profile.Id == existingProfileId));
+    }
+
+    /// <summary>Returns the local net-worth observations that belong to the selected scenario's profile.</summary>
+    [Fact]
+    public async Task Net_worth_history_is_available_for_a_scenario()
+    {
+        var profileId = Guid.NewGuid();
+        var scenarioId = Guid.NewGuid();
+        await using (var scope = _factory.Services.CreateAsyncScope())
+        {
+            var database = scope.ServiceProvider.GetRequiredService<LifeLedgerDbContext>();
+            database.Profiles.Add(new Profile { Id = profileId, DisplayName = "History test profile" });
+            database.Scenarios.Add(new FinancialScenario { Id = scenarioId, ProfileId = profileId, Name = "Reference", IsBaseline = true, Assumptions = new SimulationAssumptions { ScenarioId = scenarioId } });
+            database.NetWorthSnapshots.Add(new NetWorthSnapshot { ProfileId = profileId, NetWorth = 123_456.78m, Currency = "EUR" });
+            await database.SaveChangesAsync();
+        }
+
+        using var client = _factory.CreateClient();
+        using var response = await client.GetAsync($"/api/scenarios/{scenarioId}/net-worth-history");
+        var history = await response.Content.ReadFromJsonAsync<NetWorthSnapshotResponse[]>();
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var snapshot = Assert.Single(history!);
+        Assert.Equal(123_456.78m, snapshot.NetWorth);
+        Assert.Equal("EUR", snapshot.Currency);
+    }
+
+    /// <summary>Captures the baseline scenario's current assets less liabilities at application startup.</summary>
+    [Fact]
+    public async Task Net_worth_capture_records_the_baseline_scenario_value()
+    {
+        var profileId = Guid.NewGuid();
+        var scenarioId = Guid.NewGuid();
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var database = scope.ServiceProvider.GetRequiredService<LifeLedgerDbContext>();
+        database.Profiles.Add(new Profile { Id = profileId, DisplayName = "Capture test profile", BaseCurrency = "EUR" });
+        database.Scenarios.Add(new FinancialScenario
+        {
+            Id = scenarioId,
+            ProfileId = profileId,
+            Name = "Reference",
+            IsBaseline = true,
+            Assumptions = new SimulationAssumptions { ScenarioId = scenarioId },
+            Assets = [new Asset { ScenarioId = scenarioId, Name = "Cash", Kind = AssetKind.Cash, CurrentValue = 10_000m, Currency = "EUR" }],
+            Liabilities = [new Liability { ScenarioId = scenarioId, Name = "Loan", Kind = LiabilityKind.Loan, OutstandingBalance = 2_500m, Currency = "EUR" }]
+        });
+        await database.SaveChangesAsync();
+
+        var historyService = scope.ServiceProvider.GetRequiredService<INetWorthHistoryService>();
+        await historyService.CaptureAsync();
+
+        var snapshot = await database.NetWorthSnapshots.SingleAsync(item => item.ProfileId == profileId);
+        Assert.Equal(7_500m, snapshot.NetWorth);
+        Assert.Equal("EUR", snapshot.Currency);
     }
 }

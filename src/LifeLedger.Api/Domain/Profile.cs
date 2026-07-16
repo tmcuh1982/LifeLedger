@@ -23,6 +23,8 @@ public sealed class Profile
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
     /// <summary>Career periods used to estimate public pensions across countries.</summary>
     public List<CareerPeriod> Careers { get; set; } = [];
+    /// <summary>Locally captured net-worth observations for the reference scenario.</summary>
+    public List<NetWorthSnapshot> NetWorthSnapshots { get; set; } = [];
 }
 
 /// <summary>Represents an insured career period in one country.</summary>
@@ -48,4 +50,21 @@ public sealed class CareerPeriod
     public int PensionAge { get; set; } = 65;
     /// <summary>Free-form explanatory notes supplied by the user.</summary>
     public string Notes { get; set; } = string.Empty;
+}
+
+/// <summary>Stores the actual net worth observed for a profile at a point in time.</summary>
+public sealed class NetWorthSnapshot
+{
+    /// <summary>Stable identifier of the snapshot.</summary>
+    public Guid Id { get; set; } = Guid.NewGuid();
+    /// <summary>Identifier of the profile whose wealth was captured.</summary>
+    public Guid ProfileId { get; set; }
+    /// <summary>Navigation to the owning profile.</summary>
+    public Profile? Profile { get; set; }
+    /// <summary>UTC timestamp at which the local server captured the value.</summary>
+    public DateTimeOffset CapturedAt { get; set; } = DateTimeOffset.UtcNow;
+    /// <summary>Assets minus liabilities in <see cref="Currency"/>.</summary>
+    public decimal NetWorth { get; set; }
+    /// <summary>ISO 4217 currency used to consolidate the snapshot.</summary>
+    public string Currency { get; set; } = "EUR";
 }

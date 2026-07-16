@@ -21,6 +21,12 @@ export interface ProjectionYear {
   inflationAdjustedNetWorth: number
 }
 
+export interface NetWorthSnapshot {
+  capturedAt: string
+  netWorth: number
+  currency: string
+}
+
 export interface AllocationSlice {
   name: string
   kind: string

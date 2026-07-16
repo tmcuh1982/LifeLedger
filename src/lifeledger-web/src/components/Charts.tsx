@@ -1,5 +1,5 @@
 import { Area, AreaChart, Bar, BarChart, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
-import type { AllocationSlice, ProjectionYear } from '../types'
+import type { AllocationSlice, NetWorthSnapshot, ProjectionYear } from '../types'
 
 const palette = ['#adc9eb', '#b9f6c8', '#ffddb0', '#d5b7ff', '#ffb4ab', '#ffffff']
 
@@ -28,6 +28,23 @@ export function NetWorthChart({ timeline, currency, locale = 'en' }: { timeline:
           <Tooltip content={<ChartTooltip currency={currency} locale={locale} />} />
           <Area type="monotone" dataKey="netWorth" name={locale === 'fr' ? 'Patrimoine net' : 'Net worth'} stroke="#adc9eb" strokeWidth={2.5} fill="url(#netWorthFill)" />
           <Area type="monotone" dataKey="inflationAdjustedNetWorth" name={locale === 'fr' ? 'Valeur actuelle' : "Today's money"} stroke="#ffffff" strokeWidth={1.5} strokeDasharray="5 5" fill="transparent" />
+        </AreaChart>
+      </ResponsiveContainer>
+    </div>
+  )
+}
+
+export function ActualNetWorthChart({ history, currency, locale = 'en' }: { history: NetWorthSnapshot[]; currency: string; locale?: string }) {
+  const data = history.map((snapshot) => ({ ...snapshot, date: new Intl.DateTimeFormat(locale, { day: '2-digit', month: 'short', year: 'numeric' }).format(new Date(snapshot.capturedAt)) }))
+  return (
+    <div className="h-64">
+      <ResponsiveContainer width="100%" height="100%">
+        <AreaChart data={data} margin={{ top: 8, right: 8, left: -12, bottom: 0 }}>
+          <defs><linearGradient id="actualNetWorthFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#b9f6c8" stopOpacity={0.4} /><stop offset="100%" stopColor="#b9f6c8" stopOpacity={0} /></linearGradient></defs>
+          <XAxis dataKey="date" tickLine={false} axisLine={false} tick={{ fill: '#c4c7c8', fontSize: 11 }} minTickGap={28} />
+          <YAxis tickFormatter={(value) => compact(value, currency, locale)} tickLine={false} axisLine={false} tick={{ fill: '#c4c7c8', fontSize: 11 }} width={70} />
+          <Tooltip content={<ChartTooltip currency={currency} locale={locale} />} />
+          <Area type="monotone" dataKey="netWorth" name={locale === 'fr' ? 'Patrimoine observé' : 'Observed net worth'} stroke="#b9f6c8" strokeWidth={2.5} fill="url(#actualNetWorthFill)" />
         </AreaChart>
       </ResponsiveContainer>
     </div>

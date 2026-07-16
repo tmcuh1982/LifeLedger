@@ -14,10 +14,11 @@ interface SettingsProps {
   onExport: (fileName: string) => Promise<void>
   onRestore: (document: LifeLedgerExport) => Promise<void>
   onResetMarketHistory: () => Promise<void>
+  onResetNetWorthHistory: () => Promise<void>
   onDeleteAllData: () => Promise<void>
 }
 
-export function Settings({ locale, profile, saving, onClose, onSaveProfile, onExport, onRestore, onResetMarketHistory, onDeleteAllData }: SettingsProps) {
+export function Settings({ locale, profile, saving, onClose, onSaveProfile, onExport, onRestore, onResetMarketHistory, onResetNetWorthHistory, onDeleteAllData }: SettingsProps) {
   const [currency, setCurrency] = useState(profile?.baseCurrency ?? 'EUR')
   const [expectedLifespan, setExpectedLifespan] = useState(profile?.expectedLifespan ?? 81)
   const [lifespanReference, setLifespanReference] = useState<'male' | 'female' | 'custom'>(profile?.expectedLifespan === 79 ? 'male' : profile?.expectedLifespan === 84 ? 'female' : 'custom')
@@ -48,6 +49,12 @@ export function Settings({ locale, profile, saving, onClose, onSaveProfile, onEx
     if (!window.confirm(tr(locale, 'Delete every locally stored market-price point?', 'Supprimer tous les points de cours enregistrés localement ?'))) return
     await onResetMarketHistory()
     setMessage(tr(locale, 'Price history reset.', 'Historique des cours réinitialisé.'))
+  }
+
+  async function resetNetWorthHistory() {
+    if (!window.confirm(tr(locale, 'Delete every locally stored net-worth history point?', 'Supprimer tous les points d’historique de patrimoine enregistrés localement ?'))) return
+    await onResetNetWorthHistory()
+    setMessage(tr(locale, 'Net-worth history reset.', 'Historique du patrimoine réinitialisé.'))
   }
 
   async function deleteAllData() {
@@ -127,6 +134,12 @@ export function Settings({ locale, profile, saving, onClose, onSaveProfile, onEx
             <p className="text-sm font-medium text-mist">{tr(locale, 'Market-price chart', 'Graphique des cours')}</p>
             <p className="mt-1 text-xs leading-5 text-muted">{tr(locale, 'Quotes are stored only on your server. Resetting removes the chart points, not your assets.', 'Les cours restent sur votre serveur. La remise à zéro supprime les points du graphique, pas vos actifs.')}</p>
             <button className="ghost-button mt-3" onClick={() => void resetHistory()}>{tr(locale, 'Reset chart points', 'Réinitialiser les points')}</button>
+          </article>}
+
+          {profile && <article className="rounded-2xl border border-white/10 bg-white/5 p-4">
+            <p className="text-sm font-medium text-mist">{tr(locale, 'Net-worth history', 'Historique du patrimoine')}</p>
+            <p className="mt-1 text-xs leading-5 text-muted">{tr(locale, 'A point is saved locally each time LifeLedger starts for your reference scenario. Resetting removes only the history, not your financial entries.', 'Un point est enregistré localement à chaque démarrage de LifeLedger pour votre scénario de référence. La remise à zéro supprime uniquement l’historique, pas vos données financières.')}</p>
+            <button className="ghost-button mt-3" onClick={() => void resetNetWorthHistory()}>{tr(locale, 'Reset net-worth history', 'Réinitialiser l’historique')}</button>
           </article>}
 
           <article className="rounded-2xl border border-white/10 bg-white/5 p-4">

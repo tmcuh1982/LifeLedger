@@ -34,6 +34,9 @@ public sealed record ProjectionYear(
 /// <summary>Represents one asset group in the portfolio allocation.</summary>
 public sealed record AllocationSlice(string Name, AssetKind Kind, decimal Value, decimal Percentage);
 
+/// <summary>Represents one locally stored observation in the actual net-worth history.</summary>
+public sealed record NetWorthSnapshotResponse(DateTimeOffset CapturedAt, decimal NetWorth, string Currency);
+
 /// <summary>Returns the result of a deterministic, historical, or Monte Carlo simulation.</summary>
 public sealed record SimulationResponse(SimulationMode Mode, int Runs, decimal ProbabilityOfSuccess, IReadOnlyList<ProjectionYear> Timeline, IReadOnlyList<decimal> TerminalNetWorths, IReadOnlyList<string> Warnings);
 

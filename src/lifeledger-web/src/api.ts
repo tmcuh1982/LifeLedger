@@ -1,4 +1,4 @@
-import type { Dashboard, LifeLedgerExport, Profile, ScenarioData, ScenarioSummary, Simulation, SimulationMode } from './types'
+import type { Dashboard, LifeLedgerExport, NetWorthSnapshot, Profile, ScenarioData, ScenarioSummary, Simulation, SimulationMode } from './types'
 
 const baseUrl = import.meta.env.VITE_API_URL ?? '/api'
 
@@ -21,6 +21,8 @@ export const api = {
   refreshMarketPrices: () => request<Array<{ assetId: string; ticker: string; updated: boolean; price?: number; currency?: string; error?: string }>>('/market/refresh', { method: 'POST' }),
   assetHistory: (assetId: string) => request<Array<{ capturedAt: string; price: number; currency: string; source: string }>>(`/assets/${assetId}/history`),
   resetMarketHistory: () => request<void>('/market/history', { method: 'DELETE' }),
+  netWorthHistory: (scenarioId: string) => request<NetWorthSnapshot[]>(`/scenarios/${scenarioId}/net-worth-history`),
+  resetNetWorthHistory: () => request<void>('/net-worth-history', { method: 'DELETE' }),
   deleteAllData: () => request<void>('/data', { method: 'DELETE' }),
   dashboard: (id: string) => request<Dashboard>(`/scenarios/${id}/dashboard`),
   scenarioData: (id: string) => request<ScenarioData>(`/scenarios/${id}/data`),

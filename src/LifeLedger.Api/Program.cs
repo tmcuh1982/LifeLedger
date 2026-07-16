@@ -53,6 +53,7 @@ builder.Services.AddScoped<IScenarioRepository, ScenarioRepository>();
 builder.Services.AddScoped<IDatabaseMigrator, DatabaseMigrator>();
 builder.Services.AddScoped<IDataImportService, DataImportService>();
 builder.Services.AddScoped<IMarketDataService, MarketDataService>();
+builder.Services.AddScoped<INetWorthHistoryService, NetWorthHistoryService>();
 builder.Services.AddHttpClient();
 builder.Services.AddSingleton<ICurrencyService>(serviceProvider => new LocalCurrencyService(
     Path.Combine(builder.Environment.ContentRootPath, "data", "currency-rates.local.json"),
@@ -98,6 +99,7 @@ using (var scope = app.Services.CreateScope())
     var db = scope.ServiceProvider.GetRequiredService<LifeLedgerDbContext>();
     if (app.Configuration.GetValue("SeedDemoData", true))
         await DemoDataSeeder.SeedAsync(db, Path.Combine(app.Environment.ContentRootPath, "data"));
+    await scope.ServiceProvider.GetRequiredService<INetWorthHistoryService>().CaptureAsync();
 }
 
 var api = app.MapGroup("/api");
@@ -114,12 +116,29 @@ api.MapPut("/currencies/{code}", (string code, UpsertCurrencyRateRequest request
 });
 api.MapPost("/market/refresh", async (IMarketDataService marketData, CancellationToken ct) => Results.Ok(await marketData.RefreshAsync(ct)));
 api.MapGet("/assets/{id:guid}/history", async (Guid id, LifeLedgerDbContext db, CancellationToken ct) =>
-    Results.Ok(await db.AssetQuoteSnapshots.AsNoTracking().Where(x => x.AssetId == id).OrderBy(x => x.CapturedAt)
-        .Select(x => new { x.CapturedAt, x.Price, x.Currency, x.Source }).ToListAsync(ct)));
+    Results.Ok((await db.AssetQuoteSnapshots.AsNoTracking().Where(x => x.AssetId == id)
+        .Select(x => new { x.CapturedAt, x.Price, x.Currency, x.Source }).ToListAsync(ct))
+        .OrderBy(x => x.CapturedAt)));
+api.MapGet("/scenarios/{id:guid}/net-worth-history", async (Guid id, LifeLedgerDbContext db, CancellationToken ct) =>
+{
+    var profileId = await db.Scenarios.Where(scenario => scenario.Id == id).Select(scenario => (Guid?)scenario.ProfileId).FirstOrDefaultAsync(ct);
+    if (profileId is null) return Results.NotFound();
+    var history = (await db.NetWorthSnapshots.AsNoTracking()
+        .Where(snapshot => snapshot.ProfileId == profileId)
+        .Select(snapshot => new NetWorthSnapshotResponse(snapshot.CapturedAt, snapshot.NetWorth, snapshot.Currency))
+        .ToListAsync(ct))
+        .OrderBy(snapshot => snapshot.CapturedAt);
+    return Results.Ok(history);
+});
 // Removing price history deliberately does not alter the current value of the user's assets.
 api.MapDelete("/market/history", async (LifeLedgerDbContext db, CancellationToken ct) =>
 {
     await db.AssetQuoteSnapshots.ExecuteDeleteAsync(ct);
+    return Results.NoContent();
+});
+api.MapDelete("/net-worth-history", async (LifeLedgerDbContext db, CancellationToken ct) =>
+{
+    await db.NetWorthSnapshots.ExecuteDeleteAsync(ct);
     return Results.NoContent();
 });
 
@@ -128,6 +147,7 @@ api.MapDelete("/data", async (LifeLedgerDbContext db, IHostEnvironment environme
     // Delete children first so this remains safe even if a deployment uses stricter foreign-key settings.
     await using var transaction = await db.Database.BeginTransactionAsync(ct);
     await db.AssetQuoteSnapshots.ExecuteDeleteAsync(ct);
+    await db.NetWorthSnapshots.ExecuteDeleteAsync(ct);
     await db.Scenarios.ExecuteDeleteAsync(ct);
     await db.Profiles.ExecuteDeleteAsync(ct);
     await transaction.CommitAsync(ct);

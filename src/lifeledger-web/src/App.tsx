@@ -1,11 +1,11 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react'
 import { api } from './api'
-import { AllocationChart, CashFlowChart, NetWorthChart } from './components/Charts'
+import { ActualNetWorthChart, AllocationChart, CashFlowChart, NetWorthChart } from './components/Charts'
 import { MetricCard } from './components/MetricCard'
 import { Planner } from './components/Planner'
 import { Settings } from './components/Settings'
 import { getCopy, localeNames, locales, type Locale } from './i18n'
-import type { Dashboard, LifeLedgerExport, Profile, ScenarioData, ScenarioSummary, Simulation, SimulationMode } from './types'
+import type { Dashboard, LifeLedgerExport, NetWorthSnapshot, Profile, ScenarioData, ScenarioSummary, Simulation, SimulationMode } from './types'
 
 type Page = 'dashboard' | 'planner' | 'simulator' | 'scenarios'
 const navigation: Array<{ id: Page; label: keyof ReturnType<typeof getCopy>; icon: string }> = [
@@ -33,6 +33,7 @@ export function App() {
   const [dashboard, setDashboard] = useState<Dashboard>()
   const [data, setData] = useState<ScenarioData>()
   const [simulation, setSimulation] = useState<Simulation>()
+  const [netWorthHistory, setNetWorthHistory] = useState<NetWorthSnapshot[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string>()
   const [creating, setCreating] = useState(false)
@@ -51,8 +52,8 @@ export function App() {
   }
 
   async function loadScenario(id: string) {
-    const [nextDashboard, nextData] = await Promise.all([api.dashboard(id), api.scenarioData(id)])
-    setDashboard(nextDashboard); setData(nextData); setSimulation(undefined)
+    const [nextDashboard, nextData, nextNetWorthHistory] = await Promise.all([api.dashboard(id), api.scenarioData(id), api.netWorthHistory(id)])
+    setDashboard(nextDashboard); setData(nextData); setNetWorthHistory(nextNetWorthHistory); setSimulation(undefined)
   }
 
   async function refresh() {
@@ -65,7 +66,7 @@ export function App() {
         : nextScenarios.find((scenario) => scenario.isBaseline)?.id ?? nextScenarios[0]?.id
       setSelectedId(id)
       if (id) await loadScenario(id)
-      else { setDashboard(undefined); setData(undefined); setSimulation(undefined) }
+      else { setDashboard(undefined); setData(undefined); setNetWorthHistory([]); setSimulation(undefined) }
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'Could not load your ledger.') }
     finally { setLoading(false) }
   }
@@ -147,6 +148,13 @@ export function App() {
     catch (reason) { setError(reason instanceof Error ? reason.message : 'Could not reset price history.') }
   }
 
+  async function resetNetWorthHistory() {
+    try {
+      await api.resetNetWorthHistory()
+      setNetWorthHistory([])
+    } catch (reason) { setError(reason instanceof Error ? reason.message : 'Could not reset net-worth history.') }
+  }
+
   async function deleteAllData() {
     try {
       await api.deleteAllData()
@@ -174,8 +182,8 @@ export function App() {
           </header>
 
           {error && <div className="mb-6 flex items-center justify-between gap-4 rounded-2xl border border-danger/30 bg-danger/10 px-4 py-3 text-sm text-danger"><span>{error}</span><button className="text-xs font-bold uppercase" onClick={() => setError(undefined)}>{tr(locale, 'Dismiss', 'Fermer')}</button></div>}
-          {loading && !dashboard ? <Loading locale={locale} /> : !selected || !dashboard ? <Empty locale={locale} /> : page === 'dashboard' ? <DashboardPage dashboard={dashboard} locale={locale} onPlan={() => setPage('planner')} /> : page === 'planner' && data ? <Planner data={data} scenarioId={selected.id} currency={currency} locale={locale} onCreate={createItem} onUpdate={updateItem} onDelete={deleteItem} /> : page === 'simulator' ? <SimulatorPage dashboard={dashboard} simulation={simulation} locale={locale} onRun={runSimulation} /> : <ScenariosPage scenarios={scenarios} selectedId={selected.id} name={scenarioName} creating={creating} locale={locale} onName={setScenarioName} onSubmit={createScenario} onSelect={selectScenario} />}
-          {settingsOpen && <Settings locale={locale} profile={profile} saving={savingSettings} onClose={() => setSettingsOpen(false)} onSaveProfile={saveProfileSettings} onExport={downloadExport} onRestore={restoreBackup} onResetMarketHistory={resetMarketHistory} onDeleteAllData={deleteAllData} />}
+          {loading && !dashboard ? <Loading locale={locale} /> : !selected || !dashboard ? <Empty locale={locale} /> : page === 'dashboard' ? <><DashboardPage dashboard={dashboard} locale={locale} onPlan={() => setPage('planner')} /><ActualNetWorthHistorySection history={netWorthHistory} currency={dashboard.currency} locale={locale} /></> : page === 'planner' && data ? <Planner data={data} scenarioId={selected.id} currency={currency} locale={locale} onCreate={createItem} onUpdate={updateItem} onDelete={deleteItem} /> : page === 'simulator' ? <SimulatorPage dashboard={dashboard} simulation={simulation} locale={locale} onRun={runSimulation} /> : <ScenariosPage scenarios={scenarios} selectedId={selected.id} name={scenarioName} creating={creating} locale={locale} onName={setScenarioName} onSubmit={createScenario} onSelect={selectScenario} />}
+          {settingsOpen && <Settings locale={locale} profile={profile} saving={savingSettings} onClose={() => setSettingsOpen(false)} onSaveProfile={saveProfileSettings} onExport={downloadExport} onRestore={restoreBackup} onResetMarketHistory={resetMarketHistory} onResetNetWorthHistory={resetNetWorthHistory} onDeleteAllData={deleteAllData} />}
         </div>
       </div>
     </main>
@@ -186,6 +194,10 @@ function DashboardPage({ dashboard, locale, onPlan }: { dashboard: Dashboard; lo
   const now = dashboard.timeline[0]
   const inTenYears = dashboard.timeline.find((row) => row.year >= now.year + 10) ?? dashboard.timeline.at(-1)!
   return <section className="space-y-5"><div className="flex flex-col justify-between gap-5 xl:flex-row xl:items-end"><div><p className="eyebrow">{tr(locale, 'Long-term clarity', 'Vision à long terme')}</p><h1 className="mt-2 max-w-2xl text-3xl font-semibold tracking-tight text-white sm:text-4xl">{tr(locale, 'See where your current life could lead.', 'Découvrez où votre mode de vie actuel peut vous mener.')}</h1><p className="mt-3 max-w-2xl text-sm leading-6 text-muted">{tr(locale, 'A living model of your income, assets, debt, expenses and life events—across the next fifty years.', 'Un modèle vivant de vos revenus, actifs, dettes, dépenses et événements de vie sur les cinquante prochaines années.')}</p></div><button className="ghost-button" onClick={onPlan}>{tr(locale, 'Edit life inputs', 'Modifier les données')}</button></div><div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"><MetricCard label={tr(locale, 'Current net worth', 'Patrimoine net actuel')} value={formatMoney(dashboard.currentNetWorth, dashboard.currency, true, locale)} detail={tr(locale, 'Assets less liabilities today', 'Actifs moins dettes aujourd’hui')} icon="◈" /><MetricCard label={tr(locale, '10-year net worth', 'Patrimoine net à 10 ans')} value={formatMoney(inTenYears.netWorth, dashboard.currency, true, locale)} detail={`${tr(locale, 'At age', 'À')} ${inTenYears.age} ${tr(locale, 'years', 'ans')}`} icon="↗" tone="success" /><MetricCard label={tr(locale, 'Passive monthly income', 'Revenu passif mensuel')} value={formatMoney(dashboard.passiveMonthlyIncome, dashboard.currency, true, locale)} detail={tr(locale, 'Rent, dividends and royalties', 'Loyers, dividendes et redevances')} icon="⌁" /><MetricCard label={tr(locale, 'Success probability', 'Probabilité de réussite')} value={`${Math.round(dashboard.probabilityOfSuccess * 100)}%`} detail={tr(locale, 'Monte Carlo solvency rate', 'Taux de solvabilité Monte Carlo')} icon="◌" tone={dashboard.probabilityOfSuccess >= .8 ? 'success' : 'warning'} /></div><div className="grid gap-4 xl:grid-cols-[1.65fr_1fr]"><article className="section-card"><div className="flex items-start justify-between gap-4"><div><p className="eyebrow">{tr(locale, 'Wealth timeline', 'Évolution du patrimoine')}</p><h2 className="mt-1 text-lg font-semibold text-white">{tr(locale, 'Nominal vs. today’s purchasing power', 'Valeur nominale et pouvoir d’achat actuel')}</h2></div><span className="rounded-full bg-sky/15 px-3 py-1 text-xs font-medium text-sky">{tr(locale, 'to age', 'jusqu’à')} {dashboard.timeline.at(-1)?.age} {tr(locale, 'years', 'ans')}</span></div><div className="mt-5"><NetWorthChart timeline={dashboard.timeline} currency={dashboard.currency} locale={locale} /></div></article><article className="section-card"><p className="eyebrow">{tr(locale, 'Financial independence', 'Indépendance financière')}</p><p className="mt-2 text-2xl font-semibold text-white">{formatDate(dashboard.financialIndependenceDate, locale)}</p><p className="mt-2 text-sm leading-6 text-muted">{tr(locale, 'The first point where your projected wealth can support planned annual spending at your safe withdrawal rate.', 'Le premier moment où votre patrimoine projeté peut financer vos dépenses annuelles prévues selon votre taux de retrait sûr.')}</p><dl className="mt-6 space-y-3 border-t border-white/10 pt-5 text-sm"><div className="flex justify-between gap-4"><dt className="text-muted">{tr(locale, 'Retirement income', 'Revenu à la retraite')}</dt><dd className="font-medium text-mist">{formatMoney(dashboard.estimatedRetirementIncome, dashboard.currency, false, locale)}/{tr(locale, 'mo', 'mois')}</dd></div><div className="flex justify-between gap-4"><dt className="text-muted">{tr(locale, 'Real wealth change', 'Évolution réelle du patrimoine')}</dt><dd className={dashboard.inflationAdjustedPurchasingPowerChange >= 0 ? 'font-medium text-success' : 'font-medium text-warning'}>{dashboard.inflationAdjustedPurchasingPowerChange >= 0 ? '+' : ''}{Math.round(dashboard.inflationAdjustedPurchasingPowerChange)}%</dd></div></dl></article></div><div className="grid gap-4 xl:grid-cols-2"><article className="section-card"><p className="eyebrow">{tr(locale, 'Portfolio allocation', 'Répartition du portefeuille')}</p><h2 className="mt-1 text-lg font-semibold text-white">{tr(locale, 'What you own today', 'Ce que vous possédez aujourd’hui')}</h2><div className="mt-4"><AllocationChart allocation={dashboard.allocation} currency={dashboard.currency} /></div></article><article className="section-card"><p className="eyebrow">{tr(locale, 'Cash flow timeline', 'Évolution de la trésorerie')}</p><h2 className="mt-1 text-lg font-semibold text-white">{tr(locale, 'Annual surplus after planned saving', 'Excédent annuel après épargne prévue')}</h2><div className="mt-4"><CashFlowChart timeline={dashboard.timeline} currency={dashboard.currency} locale={locale} /></div></article></div><Warnings items={dashboard.warnings} locale={locale} /></section>
+}
+
+function ActualNetWorthHistorySection({ history, currency, locale }: { history: NetWorthSnapshot[]; currency: string; locale: Locale }) {
+  return <article className="section-card"><div className="flex items-start justify-between gap-4"><div><p className="eyebrow">{tr(locale, 'Actual history', 'Historique réel')}</p><h2 className="mt-1 text-lg font-semibold text-white">{tr(locale, 'Your observed net worth over time', 'Votre patrimoine net observé dans le temps')}</h2></div><span className="rounded-full bg-success/10 px-3 py-1 text-xs font-medium text-success">{history.length} {tr(locale, 'point(s)', 'point(s)')}</span></div>{history.length ? <div className="mt-5"><ActualNetWorthChart history={history} currency={currency} locale={locale} /></div> : <p className="mt-5 rounded-xl bg-white/5 px-4 py-5 text-sm leading-6 text-muted">{tr(locale, 'The first point will be saved the next time LifeLedger starts.', 'Le premier point sera enregistré au prochain démarrage de LifeLedger.')}</p>}</article>
 }
 
 function SimulatorPage({ dashboard, simulation, locale, onRun }: { dashboard: Dashboard; simulation?: Simulation; locale: Locale; onRun: (mode: SimulationMode) => Promise<void> }) {
