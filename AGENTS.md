@@ -1,0 +1,23 @@
+# LifeLedger agent guide
+
+## Project guidance
+
+- Prefer clear, maintainable code and strong typing.
+- Preserve the local-first and privacy-first design: financial data remains in the self-hosted database unless a user explicitly enables a market-data refresh.
+- Keep financial calculations isolated in services and make assumptions configurable.
+- Use the existing Atmospheric Glass design system for frontend work.
+- Validate backend and frontend changes with the relevant build or test command before handoff.
+
+## Agent skills
+
+### Issue tracker
+
+Issues and product work are tracked in GitHub Issues for this repository. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Use the approved GitHub label vocabulary in `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+LifeLedger uses one repository-wide domain context in `CONTEXT.md`; architectural decisions live in `docs/adr/`. See `docs/agents/domain.md`.
