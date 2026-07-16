@@ -21,6 +21,7 @@ export const api = {
   refreshMarketPrices: () => request<Array<{ assetId: string; ticker: string; updated: boolean; price?: number; currency?: string; error?: string }>>('/market/refresh', { method: 'POST' }),
   assetHistory: (assetId: string) => request<Array<{ capturedAt: string; price: number; currency: string; source: string }>>(`/assets/${assetId}/history`),
   resetMarketHistory: () => request<void>('/market/history', { method: 'DELETE' }),
+  deleteAllData: () => request<void>('/data', { method: 'DELETE' }),
   dashboard: (id: string) => request<Dashboard>(`/scenarios/${id}/dashboard`),
   scenarioData: (id: string) => request<ScenarioData>(`/scenarios/${id}/data`),
   simulation: (id: string, mode: SimulationMode) => request<Simulation>(`/scenarios/${id}/simulate`, { method: 'POST', body: JSON.stringify({ mode }) }),

@@ -65,6 +65,7 @@ export function App() {
         : nextScenarios.find((scenario) => scenario.isBaseline)?.id ?? nextScenarios[0]?.id
       setSelectedId(id)
       if (id) await loadScenario(id)
+      else { setDashboard(undefined); setData(undefined); setSimulation(undefined) }
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'Could not load your ledger.') }
     finally { setLoading(false) }
   }
@@ -112,8 +113,7 @@ export function App() {
   }
 
   async function openSettings() {
-    if (!selected) return
-    try { setProfile(await api.profile(selected.profileId)); setSettingsOpen(true) }
+    try { setProfile(selected ? await api.profile(selected.profileId) : undefined); setSettingsOpen(true) }
     catch (reason) { setError(reason instanceof Error ? reason.message : 'Could not load settings.') }
   }
 
@@ -147,6 +147,15 @@ export function App() {
     catch (reason) { setError(reason instanceof Error ? reason.message : 'Could not reset price history.') }
   }
 
+  async function deleteAllData() {
+    try {
+      await api.deleteAllData()
+      setProfile(undefined)
+      setSettingsOpen(false)
+      await refresh()
+    } catch (reason) { setError(reason instanceof Error ? reason.message : 'Could not delete local data.') }
+  }
+
   return (
     <main className="min-h-screen p-3 sm:p-5 lg:p-6">
       <div className="mx-auto grid min-h-[calc(100vh-1.5rem)] max-w-[1560px] lg:grid-cols-[244px_1fr]">
@@ -166,7 +175,7 @@ export function App() {
 
           {error && <div className="mb-6 flex items-center justify-between gap-4 rounded-2xl border border-danger/30 bg-danger/10 px-4 py-3 text-sm text-danger"><span>{error}</span><button className="text-xs font-bold uppercase" onClick={() => setError(undefined)}>{tr(locale, 'Dismiss', 'Fermer')}</button></div>}
           {loading && !dashboard ? <Loading locale={locale} /> : !selected || !dashboard ? <Empty locale={locale} /> : page === 'dashboard' ? <DashboardPage dashboard={dashboard} locale={locale} onPlan={() => setPage('planner')} /> : page === 'planner' && data ? <Planner data={data} scenarioId={selected.id} currency={currency} locale={locale} onCreate={createItem} onUpdate={updateItem} onDelete={deleteItem} /> : page === 'simulator' ? <SimulatorPage dashboard={dashboard} simulation={simulation} locale={locale} onRun={runSimulation} /> : <ScenariosPage scenarios={scenarios} selectedId={selected.id} name={scenarioName} creating={creating} locale={locale} onName={setScenarioName} onSubmit={createScenario} onSelect={selectScenario} />}
-          {settingsOpen && profile && <Settings locale={locale} profile={profile} saving={savingSettings} onClose={() => setSettingsOpen(false)} onSaveCurrency={saveDefaultCurrency} onExport={downloadExport} onRestore={restoreBackup} onResetMarketHistory={resetMarketHistory} />}
+          {settingsOpen && <Settings locale={locale} profile={profile} saving={savingSettings} onClose={() => setSettingsOpen(false)} onSaveCurrency={saveDefaultCurrency} onExport={downloadExport} onRestore={restoreBackup} onResetMarketHistory={resetMarketHistory} onDeleteAllData={deleteAllData} />}
         </div>
       </div>
     </main>

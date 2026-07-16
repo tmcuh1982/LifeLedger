@@ -95,7 +95,8 @@ using (var scope = app.Services.CreateScope())
     var migrator = scope.ServiceProvider.GetRequiredService<IDatabaseMigrator>();
     await migrator.ApplyAsync();
     var db = scope.ServiceProvider.GetRequiredService<LifeLedgerDbContext>();
-    if (app.Configuration.GetValue("SeedDemoData", true)) await DemoDataSeeder.SeedAsync(db);
+    if (app.Configuration.GetValue("SeedDemoData", true))
+        await DemoDataSeeder.SeedAsync(db, Path.Combine(app.Environment.ContentRootPath, "data"));
 }
 
 var api = app.MapGroup("/api");
@@ -118,6 +119,20 @@ api.MapGet("/assets/{id:guid}/history", async (Guid id, LifeLedgerDbContext db, 
 api.MapDelete("/market/history", async (LifeLedgerDbContext db, CancellationToken ct) =>
 {
     await db.AssetQuoteSnapshots.ExecuteDeleteAsync(ct);
+    return Results.NoContent();
+});
+
+api.MapDelete("/data", async (LifeLedgerDbContext db, IHostEnvironment environment, CancellationToken ct) =>
+{
+    // Delete children first so this remains safe even if a deployment uses stricter foreign-key settings.
+    await using var transaction = await db.Database.BeginTransactionAsync(ct);
+    await db.AssetQuoteSnapshots.ExecuteDeleteAsync(ct);
+    await db.Scenarios.ExecuteDeleteAsync(ct);
+    await db.Profiles.ExecuteDeleteAsync(ct);
+    await transaction.CommitAsync(ct);
+
+    // Keep the installation empty instead of recreating the sample plan on the next startup.
+    await DemoDataSeeder.DisableFutureSeedingAsync(Path.Combine(environment.ContentRootPath, "data"), ct);
     return Results.NoContent();
 });
 

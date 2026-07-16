@@ -1,5 +1,9 @@
 using System.Net;
 using System.Net.Http.Json;
+using LifeLedger.Api.Data;
+using LifeLedger.Api.Domain;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
 namespace LifeLedger.Api.Tests;
@@ -25,5 +29,26 @@ public sealed class IncomeEndpointTests : IClassFixture<LifeLedgerApiFactory>
         });
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    /// <summary>Deletes every persisted financial record while leaving the API available for a future backup restore.</summary>
+    [Fact]
+    public async Task Deleting_all_data_removes_the_local_profile()
+    {
+        await using (var scope = _factory.Services.CreateAsyncScope())
+        {
+            var database = scope.ServiceProvider.GetRequiredService<LifeLedgerDbContext>();
+            database.Profiles.Add(new Profile { DisplayName = "Temporary test profile" });
+            await database.SaveChangesAsync();
+        }
+
+        using var client = _factory.CreateClient();
+        using var response = await client.DeleteAsync("/api/data");
+
+        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+
+        await using var verificationScope = _factory.Services.CreateAsyncScope();
+        var verificationDatabase = verificationScope.ServiceProvider.GetRequiredService<LifeLedgerDbContext>();
+        Assert.Equal(0, await verificationDatabase.Profiles.CountAsync());
     }
 }

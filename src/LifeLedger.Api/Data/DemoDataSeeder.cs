@@ -6,9 +6,14 @@ namespace LifeLedger.Api.Data;
 /// <summary>Creates a single local sample plan when a new database contains no profile.</summary>
 public static class DemoDataSeeder
 {
+    /// <summary>Local marker written after a user chooses to remove the sample data permanently.</summary>
+    private const string DisableMarkerFileName = "demo-data-disabled.local";
+
     /// <summary>Adds the sample profile and baseline scenario unless a profile already exists.</summary>
-    public static async Task SeedAsync(LifeLedgerDbContext db, CancellationToken cancellationToken = default)
+    public static async Task SeedAsync(LifeLedgerDbContext db, string dataDirectory, CancellationToken cancellationToken = default)
     {
+        // Deleting all data must remain effective after a server restart.
+        if (File.Exists(Path.Combine(dataDirectory, DisableMarkerFileName))) return;
         if (await db.Profiles.AnyAsync(cancellationToken)) return;
 
         // The sample stays entirely local and gives first-time users a meaningful dashboard.
@@ -70,5 +75,15 @@ public static class DemoDataSeeder
 
         db.Scenarios.Add(scenario);
         await db.SaveChangesAsync(cancellationToken);
+    }
+
+    /// <summary>Persists the user's choice to keep a local installation empty after data deletion.</summary>
+    public static async Task DisableFutureSeedingAsync(string dataDirectory, CancellationToken cancellationToken = default)
+    {
+        Directory.CreateDirectory(dataDirectory);
+        await File.WriteAllTextAsync(
+            Path.Combine(dataDirectory, DisableMarkerFileName),
+            "Demo data was disabled by the local user.",
+            cancellationToken);
     }
 }
