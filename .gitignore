@@ -1,0 +1,23 @@
+# .NET
+bin/
+obj/
+*.user
+*.suo
+
+# Local data and secrets
+data/
+*.db
+*.db-shm
+*.db-wal
+appsettings.Local.json
+
+# Frontend
+node_modules/
+dist/
+.vite/
+*.tsbuildinfo
+src/lifeledger-web/vite.config.js
+src/lifeledger-web/vite.config.d.ts
+
+# OS
+.DS_Store

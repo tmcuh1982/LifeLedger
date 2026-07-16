@@ -1,0 +1,26 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0.x
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: src/lifeledger-web/package-lock.json
+      - run: dotnet restore LifeLedger.sln
+      - run: dotnet build LifeLedger.sln --no-restore -c Release
+      - run: npm ci
+        working-directory: src/lifeledger-web
+      - run: npm run lint && npm run build
+        working-directory: src/lifeledger-web
