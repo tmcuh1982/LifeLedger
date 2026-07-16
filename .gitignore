@@ -6,6 +6,11 @@ obj/
 
 # Local data and secrets
 data/
+!src/LifeLedger.Api/data/
+!src/LifeLedger.Api/data/*.cs
+!src/LifeLedger.Api/data/Migrations/
+!src/LifeLedger.Api/data/Migrations/*.cs
+src/LifeLedger.Api/data/logs/
 *.db
 *.db-shm
 *.db-wal

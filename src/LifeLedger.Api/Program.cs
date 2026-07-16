@@ -46,6 +46,7 @@ builder.Services.AddCors(options => options.AddDefaultPolicy(policy => policy
     .WithOrigins(allowedOrigins).AllowAnyHeader().AllowAnyMethod()));
 builder.Services.AddSingleton<ICountryCatalog, CountryCatalog>();
 builder.Services.AddScoped<IScenarioRepository, ScenarioRepository>();
+builder.Services.AddScoped<IDatabaseMigrator, DatabaseMigrator>();
 builder.Services.AddScoped<IMarketDataService, MarketDataService>();
 builder.Services.AddHttpClient();
 builder.Services.AddSingleton<ICurrencyService>(serviceProvider => new LocalCurrencyService(
@@ -84,22 +85,9 @@ app.UseStaticFiles();
 
 using (var scope = app.Services.CreateScope())
 {
+    var migrator = scope.ServiceProvider.GetRequiredService<IDatabaseMigrator>();
+    await migrator.ApplyAsync();
     var db = scope.ServiceProvider.GetRequiredService<LifeLedgerDbContext>();
-    await db.Database.EnsureCreatedAsync();
-    if (db.Database.IsSqlite())
-    {
-        await EnsureSqliteColumnAsync(db, "Expenses", "Frequency", "INTEGER NOT NULL DEFAULT 3");
-        await EnsureSqliteColumnAsync(db, "Events", "RecurrenceFrequency", "INTEGER NULL");
-        await EnsureSqliteColumnAsync(db, "Events", "RecurrenceEndsOn", "TEXT NULL");
-        await EnsureSqliteColumnAsync(db, "Assets", "Ticker", "TEXT NULL");
-        await EnsureSqliteColumnAsync(db, "Assets", "Quantity", "TEXT NOT NULL DEFAULT '0'");
-        await EnsureSqliteColumnAsync(db, "Incomes", "TaxRate", "TEXT NOT NULL DEFAULT '0'");
-        await EnsureSqliteColumnAsync(db, "Incomes", "TaxCountryCode", "TEXT NULL");
-        await EnsureSqliteColumnAsync(db, "Assets", "CapitalGainsTaxRate", "TEXT NOT NULL DEFAULT '0'");
-        await EnsureSqliteColumnAsync(db, "Assets", "CapitalGainsTaxCountryCode", "TEXT NULL");
-        await db.Database.ExecuteSqlRawAsync("CREATE TABLE IF NOT EXISTS AssetQuoteSnapshots (Id TEXT NOT NULL CONSTRAINT PK_AssetQuoteSnapshots PRIMARY KEY, AssetId TEXT NOT NULL, CapturedAt TEXT NOT NULL, Price TEXT NOT NULL, Currency TEXT NOT NULL, Source TEXT NOT NULL)");
-        await db.Database.ExecuteSqlRawAsync("CREATE INDEX IF NOT EXISTS IX_AssetQuoteSnapshots_AssetId_CapturedAt ON AssetQuoteSnapshots (AssetId, CapturedAt)");
-    }
     if (app.Configuration.GetValue("SeedDemoData", true)) await DemoDataSeeder.SeedAsync(db);
 }
 
@@ -327,21 +315,4 @@ static void MapCollection<T>(RouteGroupBuilder api, string resource, Func<LifeLe
     });
 }
 
-static async Task EnsureSqliteColumnAsync(LifeLedgerDbContext db, string table, string column, string definition)
-{
-    await using var command = db.Database.GetDbConnection().CreateCommand();
-    command.CommandText = $"PRAGMA table_info(\"{table}\")";
-    if (command.Connection!.State != System.Data.ConnectionState.Open) await command.Connection.OpenAsync();
-    await using var reader = await command.ExecuteReaderAsync();
-    var exists = false;
-    while (await reader.ReadAsync())
-    {
-        if (string.Equals(reader.GetString(1), column, StringComparison.OrdinalIgnoreCase)) { exists = true; break; }
-    }
-    await reader.DisposeAsync();
-    if (!exists)
-    {
-        var sql = "ALTER TABLE \"" + table + "\" ADD COLUMN \"" + column + "\" " + definition;
-        await db.Database.ExecuteSqlRawAsync(sql);
-    }
-}
+public partial class Program { }
