@@ -6,6 +6,8 @@ namespace LifeLedger.Api.Data;
 /// <summary>EF Core persistence boundary for the profile, scenarios, and financial entries.</summary>
 public sealed class LifeLedgerDbContext(DbContextOptions<LifeLedgerDbContext> options) : DbContext(options)
 {
+    /// <summary>Local application metadata, including the business-data schema version.</summary>
+    public DbSet<ApplicationSetting> ApplicationSettings => Set<ApplicationSetting>();
     /// <summary>Profiles stored in the local database.</summary>
     public DbSet<Profile> Profiles => Set<Profile>();
     /// <summary>Cross-country career periods.</summary>
@@ -43,6 +45,8 @@ public sealed class LifeLedgerDbContext(DbContextOptions<LifeLedgerDbContext> op
             property.SetScale(4);
         }
 
+        modelBuilder.Entity<ApplicationSetting>().HasKey(x => x.Key);
+        modelBuilder.Entity<ApplicationSetting>().Property(x => x.Key).HasMaxLength(128);
         modelBuilder.Entity<Profile>().HasIndex(x => x.DisplayName);
         modelBuilder.Entity<NetWorthSnapshot>().HasIndex(x => new { x.ProfileId, x.CapturedAt });
         modelBuilder.Entity<NetWorthSnapshot>().HasOne(x => x.Profile).WithMany(x => x.NetWorthSnapshots).HasForeignKey(x => x.ProfileId).OnDelete(DeleteBehavior.Cascade);

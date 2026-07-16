@@ -51,6 +51,7 @@ builder.Services.AddCors(options => options.AddDefaultPolicy(policy => policy
 builder.Services.AddSingleton<ICountryCatalog, CountryCatalog>();
 builder.Services.AddScoped<IScenarioRepository, ScenarioRepository>();
 builder.Services.AddScoped<IDatabaseMigrator, DatabaseMigrator>();
+builder.Services.AddScoped<IDataSchemaMigrationService, DataSchemaMigrationService>();
 builder.Services.AddScoped<IDataImportService, DataImportService>();
 builder.Services.AddScoped<IMarketDataService, MarketDataService>();
 builder.Services.AddScoped<INetWorthHistoryService, NetWorthHistoryService>();
@@ -96,6 +97,7 @@ using (var scope = app.Services.CreateScope())
     // Schema is ready before seeding or serving any request.
     var migrator = scope.ServiceProvider.GetRequiredService<IDatabaseMigrator>();
     await migrator.ApplyAsync();
+    await scope.ServiceProvider.GetRequiredService<IDataSchemaMigrationService>().EnsureCurrentAsync();
     var db = scope.ServiceProvider.GetRequiredService<LifeLedgerDbContext>();
     if (app.Configuration.GetValue("SeedDemoData", true))
         await DemoDataSeeder.SeedAsync(db, Path.Combine(app.Environment.ContentRootPath, "data"));

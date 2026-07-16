@@ -9,7 +9,7 @@ namespace LifeLedger.Api.Tests;
 /// <summary>Verifies safe adoption of SQLite databases created before migrations were introduced.</summary>
 public sealed class DatabaseMigratorTests
 {
-    /// <summary>Ensures baselining records migration history without dropping or rebuilding an existing schema.</summary>
+    /// <summary>Ensures legacy databases receive every post-baseline migration without rebuilding their original schema.</summary>
     [Fact]
     public async Task Existing_sqlite_database_is_adopted_without_recreating_its_schema()
     {
@@ -23,7 +23,9 @@ public sealed class DatabaseMigratorTests
         {
             await using (var legacyDatabase = new LifeLedgerDbContext(options))
             {
-                await legacyDatabase.Database.EnsureCreatedAsync();
+                // Reproduce the old pre-migrations database format, including only the original table set.
+                await legacyDatabase.Database.MigrateAsync("20260716163315_InitialCreate");
+                await legacyDatabase.Database.ExecuteSqlRawAsync("DROP TABLE \"__EFMigrationsHistory\"");
             }
 
             await using (var database = new LifeLedgerDbContext(options))
@@ -31,9 +33,44 @@ public sealed class DatabaseMigratorTests
                 var migrator = new DatabaseMigrator(database, NullLogger<DatabaseMigrator>.Instance);
                 await migrator.ApplyAsync();
 
-                Assert.Contains("20260716163315_InitialCreate", database.Database.GetAppliedMigrations());
+                Assert.Equal(
+                    database.Database.GetMigrations(),
+                    database.Database.GetAppliedMigrations());
                 Assert.True(await database.Database.CanConnectAsync());
             }
+        }
+        finally
+        {
+            DeleteIfExists(databasePath);
+            DeleteIfExists($"{databasePath}-shm");
+            DeleteIfExists($"{databasePath}-wal");
+        }
+    }
+
+    /// <summary>Initialises a version marker for databases created before business-data versioning existed.</summary>
+    [Fact]
+    public async Task Database_without_data_schema_version_is_initialised_at_the_current_version()
+    {
+        // A separate file keeps the versioning service test independent of migration history behaviour.
+        var databasePath = Path.Combine(Path.GetTempPath(), $"lifeledger-data-version-tests-{Guid.NewGuid():N}.db");
+        var options = new DbContextOptionsBuilder<LifeLedgerDbContext>()
+            .UseSqlite($"Data Source={databasePath}")
+            .Options;
+
+        try
+        {
+            await using var database = new LifeLedgerDbContext(options);
+            await database.Database.EnsureCreatedAsync();
+            var service = new DataSchemaMigrationService(
+                database,
+                Array.Empty<IDataSchemaMigration>(),
+                NullLogger<DataSchemaMigrationService>.Instance);
+
+            await service.EnsureCurrentAsync();
+
+            var setting = await database.ApplicationSettings.FindAsync(DataSchemaMigrationService.DataSchemaVersionKey);
+            Assert.NotNull(setting);
+            Assert.Equal(DataSchemaMigrationService.LatestVersion.ToString(), setting.Value);
         }
         finally
         {

@@ -41,9 +41,9 @@ public sealed class DatabaseMigrator(
             return;
         }
 
-        // A legacy database already has this schema, so only migration history is added.
-        var migrations = db.Database.GetMigrations().ToList();
-        if (migrations.Count == 0)
+        // Mark only the original schema as applied; later EF migrations still need to create their tables.
+        var initialMigration = db.Database.GetMigrations().FirstOrDefault();
+        if (initialMigration is null)
         {
             return;
         }
@@ -56,12 +56,9 @@ public sealed class DatabaseMigrator(
             "CREATE TABLE \"__EFMigrationsHistory\" (\"MigrationId\" TEXT NOT NULL CONSTRAINT \"PK___EFMigrationsHistory\" PRIMARY KEY, \"ProductVersion\" TEXT NOT NULL)",
             cancellationToken);
 
-        foreach (var migration in migrations)
-        {
-            await db.Database.ExecuteSqlInterpolatedAsync(
-                $"INSERT INTO \"__EFMigrationsHistory\" (\"MigrationId\", \"ProductVersion\") VALUES ({migration}, {"9.0.0"})",
-                cancellationToken);
-        }
+        await db.Database.ExecuteSqlInterpolatedAsync(
+            $"INSERT INTO \"__EFMigrationsHistory\" (\"MigrationId\", \"ProductVersion\") VALUES ({initialMigration}, {"9.0.0"})",
+            cancellationToken);
 
         await transaction.CommitAsync(cancellationToken);
     }
