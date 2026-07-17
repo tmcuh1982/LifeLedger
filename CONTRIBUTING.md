@@ -42,4 +42,4 @@ Document the formula, source or rationale, valid jurisdictions and known limitat
 
 ## Reporting security issues
 
-Do not open a public issue with sensitive personal finance data or an exploit. Send a private report to the project maintainers once a security contact is published. Until then, sanitize all reproduction details in public discussions.
+Do not open a public issue with sensitive personal finance data or an exploit. Follow the private reporting process in [SECURITY.md](SECURITY.md) and use synthetic data for every reproduction.
