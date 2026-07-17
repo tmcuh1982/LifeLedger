@@ -22,26 +22,26 @@ builder.Services.ConfigureHttpJsonOptions(options =>
 
 // SQLite is the private, dependency-free default; PostgreSQL is selected only by explicit configuration.
 var provider = builder.Configuration["Database:Provider"] ?? "Sqlite";
-var connectionString = builder.Configuration.GetConnectionString("LifeLedger") ?? "Data Source=data/lifeledger.db";
-if (provider.Equals("Sqlite", StringComparison.OrdinalIgnoreCase))
+builder.Services.AddDbContext<LifeLedgerDbContext>((serviceProvider, options) =>
 {
-    var sqlite = new SqliteConnectionStringBuilder(connectionString);
-    if (!string.IsNullOrWhiteSpace(sqlite.DataSource) && sqlite.DataSource != ":memory:")
-    {
-        // Resolve relative SQLite paths under the content root, never the caller's working directory.
-        sqlite.DataSource = Path.IsPathRooted(sqlite.DataSource)
-            ? sqlite.DataSource
-            : Path.Combine(builder.Environment.ContentRootPath, sqlite.DataSource);
-        Directory.CreateDirectory(Path.GetDirectoryName(sqlite.DataSource)!);
-        connectionString = sqlite.ToString();
-    }
-}
-builder.Services.AddDbContext<LifeLedgerDbContext>(options =>
-{
-    if (provider.Equals("Postgres", StringComparison.OrdinalIgnoreCase) || provider.Equals("PostgreSql", StringComparison.OrdinalIgnoreCase))
-        options.UseNpgsql(connectionString);
+    // Resolve configuration when the context is created so test and deployment overrides are honoured.
+    var configuration = serviceProvider.GetRequiredService<IConfiguration>();
+    var environment = serviceProvider.GetRequiredService<IHostEnvironment>();
+    var selectedProvider = configuration["Database:Provider"] ?? "Sqlite";
+    var selectedConnectionString = configuration.GetConnectionString("LifeLedger") ?? "Data Source=data/lifeledger.db";
+    if (selectedProvider.Equals("Postgres", StringComparison.OrdinalIgnoreCase) || selectedProvider.Equals("PostgreSql", StringComparison.OrdinalIgnoreCase))
+        options.UseNpgsql(selectedConnectionString);
     else
-        options.UseSqlite(connectionString);
+    {
+        var sqlite = new SqliteConnectionStringBuilder(selectedConnectionString);
+        if (!string.IsNullOrWhiteSpace(sqlite.DataSource) && sqlite.DataSource != ":memory:")
+        {
+            // Relative SQLite paths always belong to the active host, including isolated test hosts.
+            sqlite.DataSource = Path.IsPathRooted(sqlite.DataSource) ? sqlite.DataSource : Path.Combine(environment.ContentRootPath, sqlite.DataSource);
+            Directory.CreateDirectory(Path.GetDirectoryName(sqlite.DataSource)!);
+        }
+        options.UseSqlite(sqlite.ToString());
+    }
 });
 // The development frontend is explicitly allow-listed; deployments can replace this configuration.
 var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>()
@@ -53,6 +53,7 @@ builder.Services.AddScoped<IScenarioRepository, ScenarioRepository>();
 builder.Services.AddScoped<IDatabaseMigrator, DatabaseMigrator>();
 builder.Services.AddScoped<IDataSchemaMigrationService, DataSchemaMigrationService>();
 builder.Services.AddScoped<IDataImportService, DataImportService>();
+builder.Services.AddScoped<IAssetCategoryService, AssetCategoryService>();
 builder.Services.AddSingleton<ICsvExpenseImportService, CsvExpenseImportService>();
 builder.Services.AddScoped<IMarketDataService, MarketDataService>();
 builder.Services.AddScoped<INetWorthHistoryService, NetWorthHistoryService>();
@@ -109,6 +110,26 @@ var api = app.MapGroup("/api");
 api.MapGet("/health", (PluginRegistry plugins) => Results.Ok(new { status = "ok", storage = provider, plugins = plugins.Plugins }));
 api.MapGet("/countries", (ICountryCatalog countries) => Results.Ok(countries.List()));
 api.MapGet("/plugins", (PluginRegistry plugins) => Results.Ok(plugins.Plugins));
+api.MapGet("/asset-categories", async (IAssetCategoryService categories, CancellationToken ct) => Results.Ok(await categories.ListAsync(ct)));
+api.MapPost("/asset-categories", async (AssetCategoryNameRequest request, IAssetCategoryService categories, CancellationToken ct) =>
+{
+    try { return Results.Created("/api/asset-categories", await categories.AddAsync(request.Name, ct)); }
+    catch (ArgumentException exception) { return Results.ValidationProblem(new Dictionary<string, string[]> { ["name"] = [exception.Message] }); }
+    catch (InvalidOperationException exception) { return Results.Conflict(new { message = exception.Message }); }
+});
+api.MapPut("/asset-categories/{name}", async (string name, AssetCategoryNameRequest request, IAssetCategoryService categories, CancellationToken ct) =>
+{
+    try { return Results.Ok(await categories.RenameAsync(name, request.Name, ct)); }
+    catch (ArgumentException exception) { return Results.ValidationProblem(new Dictionary<string, string[]> { ["name"] = [exception.Message] }); }
+    catch (KeyNotFoundException) { return Results.NotFound(); }
+    catch (InvalidOperationException exception) { return Results.Conflict(new { message = exception.Message }); }
+});
+api.MapDelete("/asset-categories/{name}", async (string name, IAssetCategoryService categories, CancellationToken ct) =>
+{
+    try { await categories.DeleteAsync(name, ct); return Results.NoContent(); }
+    catch (KeyNotFoundException) { return Results.NotFound(); }
+    catch (AssetCategoryInUseException exception) { return Results.Conflict(new { message = exception.Message }); }
+});
 api.MapPost("/imports/csv/expenses", (CsvExpenseImportRequest request, ICsvExpenseImportService importer) =>
 {
     try { return Results.Ok(importer.Analyse(request.Csv)); }
@@ -158,6 +179,7 @@ api.MapDelete("/data", async (LifeLedgerDbContext db, IHostEnvironment environme
     await db.NetWorthSnapshots.ExecuteDeleteAsync(ct);
     await db.Scenarios.ExecuteDeleteAsync(ct);
     await db.Profiles.ExecuteDeleteAsync(ct);
+    await db.ApplicationSettings.Where(setting => setting.Key == AssetCategoryService.SettingKey).ExecuteDeleteAsync(ct);
     await transaction.CommitAsync(ct);
 
     // Keep the installation empty instead of recreating the sample plan on the next startup.
@@ -322,7 +344,7 @@ static FinancialScenario CloneScenario(FinancialScenario parent, CreateScenarioR
     StartsOn = parent.StartsOn,
     Assumptions = new SimulationAssumptions { InflationRate = parent.Assumptions.InflationRate, SalaryGrowthRate = parent.Assumptions.SalaryGrowthRate, SafeWithdrawalRate = parent.Assumptions.SafeWithdrawalRate, RetirementAge = parent.Assumptions.RetirementAge, MonteCarloRuns = parent.Assumptions.MonteCarloRuns, DefaultReturnVolatility = parent.Assumptions.DefaultReturnVolatility },
     Incomes = parent.Incomes.Select(x => new IncomeStream { Name = x.Name, Kind = x.Kind, MonthlyAmount = x.MonthlyAmount, AnnualGrowthRate = x.AnnualGrowthRate, StartsOn = x.StartsOn, EndsOn = x.EndsOn, IsTaxable = x.IsTaxable, TaxRate = x.TaxRate, TaxCountryCode = x.TaxCountryCode, Currency = x.Currency }).ToList(),
-    Assets = parent.Assets.Select(x => new Asset { Name = x.Name, Kind = x.Kind, CurrentValue = x.CurrentValue, ExpectedAnnualReturn = x.ExpectedAnnualReturn, Volatility = x.Volatility, IsLiquid = x.IsLiquid, Ticker = x.Ticker, Quantity = x.Quantity, CapitalGainsTaxRate = x.CapitalGainsTaxRate, CapitalGainsTaxCountryCode = x.CapitalGainsTaxCountryCode, Currency = x.Currency }).ToList(),
+    Assets = parent.Assets.Select(x => new Asset { Name = x.Name, Kind = x.Kind, CustomCategory = x.CustomCategory, CurrentValue = x.CurrentValue, ExpectedAnnualReturn = x.ExpectedAnnualReturn, Volatility = x.Volatility, IsLiquid = x.IsLiquid, Ticker = x.Ticker, Quantity = x.Quantity, CapitalGainsTaxRate = x.CapitalGainsTaxRate, CapitalGainsTaxCountryCode = x.CapitalGainsTaxCountryCode, Currency = x.Currency }).ToList(),
     Liabilities = parent.Liabilities.Select(x => new Liability { Name = x.Name, Kind = x.Kind, OutstandingBalance = x.OutstandingBalance, InterestRate = x.InterestRate, MonthlyPayment = x.MonthlyPayment, PaidOffOn = x.PaidOffOn, Currency = x.Currency }).ToList(),
     Expenses = parent.Expenses.Select(x => new Expense { Name = x.Name, Kind = x.Kind, Frequency = x.Frequency, MonthlyAmount = x.MonthlyAmount, IndexedToInflation = x.IndexedToInflation, StartsOn = x.StartsOn, EndsOn = x.EndsOn, Currency = x.Currency }).ToList(),
     Investments = parent.Investments.Select(x => new InvestmentPlan { Name = x.Name, MonthlyContribution = x.MonthlyContribution, ExpectedAnnualReturn = x.ExpectedAnnualReturn, StartsOn = x.StartsOn, EndsOn = x.EndsOn }).ToList(),

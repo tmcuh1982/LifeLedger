@@ -59,6 +59,7 @@ public sealed class LifeLedgerDbContext(DbContextOptions<LifeLedgerDbContext> op
         // A scenario is the aggregate root: deleting it removes only its dependent financial entries.
         modelBuilder.Entity<FinancialScenario>().HasMany(x => x.Incomes).WithOne(x => x.Scenario).HasForeignKey(x => x.ScenarioId).OnDelete(DeleteBehavior.Cascade);
         modelBuilder.Entity<FinancialScenario>().HasMany(x => x.Assets).WithOne(x => x.Scenario).HasForeignKey(x => x.ScenarioId).OnDelete(DeleteBehavior.Cascade);
+        modelBuilder.Entity<Asset>().Property(x => x.CustomCategory).HasMaxLength(80);
         modelBuilder.Entity<AssetQuoteSnapshot>().HasIndex(x => new { x.AssetId, x.CapturedAt });
         modelBuilder.Entity<AssetQuoteSnapshot>().HasOne(x => x.Asset).WithMany().HasForeignKey(x => x.AssetId).OnDelete(DeleteBehavior.Cascade);
         modelBuilder.Entity<FinancialScenario>().HasMany(x => x.Liabilities).WithOne(x => x.Scenario).HasForeignKey(x => x.ScenarioId).OnDelete(DeleteBehavior.Cascade);

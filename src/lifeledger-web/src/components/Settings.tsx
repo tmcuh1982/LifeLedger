@@ -1,7 +1,8 @@
 import { ChangeEvent, useState } from 'react'
+import { assetKindLabel, builtInAssetKinds } from '../assetCategories'
 import { api } from '../api'
 import type { Locale } from '../i18n'
-import type { LifeLedgerExport, Profile } from '../types'
+import type { AssetCategory, LifeLedgerExport, Profile } from '../types'
 
 const currencies = ['EUR', 'USD', 'PLN', 'GBP', 'CHF', 'CAD', 'JPY']
 const tr = (locale: Locale, english: string, french: string) => locale === 'fr' ? french : english
@@ -33,9 +34,13 @@ function ageOnToday(birthDate: string): number | undefined {
 interface SettingsProps {
   locale: Locale
   profile?: Profile
+  assetCategories: AssetCategory[]
   saving: boolean
   onClose: () => void
   onSaveProfile: (profile: Profile) => Promise<void>
+  onCreateAssetCategory: (name: string) => Promise<AssetCategory[]>
+  onRenameAssetCategory: (currentName: string, name: string) => Promise<AssetCategory[]>
+  onDeleteAssetCategory: (name: string) => Promise<AssetCategory[]>
   onExport: (fileName: string) => Promise<void>
   onRestore: (document: LifeLedgerExport) => Promise<void>
   onResetMarketHistory: () => Promise<void>
@@ -43,7 +48,7 @@ interface SettingsProps {
   onDeleteAllData: () => Promise<void>
 }
 
-export function Settings({ locale, profile, saving, onClose, onSaveProfile, onExport, onRestore, onResetMarketHistory, onResetNetWorthHistory, onDeleteAllData }: SettingsProps) {
+export function Settings({ locale, profile, assetCategories, saving, onClose, onSaveProfile, onCreateAssetCategory, onRenameAssetCategory, onDeleteAssetCategory, onExport, onRestore, onResetMarketHistory, onResetNetWorthHistory, onDeleteAllData }: SettingsProps) {
   const [currency, setCurrency] = useState(profile?.baseCurrency ?? 'EUR')
   const [birthDate, setBirthDate] = useState(profile?.birthDate ?? '')
   const [sex, setSex] = useState<Profile['sex']>(profile?.sex ?? 'Neutral')
@@ -53,6 +58,9 @@ export function Settings({ locale, profile, saving, onClose, onSaveProfile, onEx
   const [deleting, setDeleting] = useState(false)
   const [message, setMessage] = useState<string>()
   const [csvSummary, setCsvSummary] = useState<{ transactions: number; months: number; totalExpenses: number; averageMonthlyExpenses: number; currency: string; categories: Array<{ name: string; total: number }> }>()
+  const [customCategories, setCustomCategories] = useState(assetCategories)
+  const [newCategory, setNewCategory] = useState('')
+  const [categoryBusy, setCategoryBusy] = useState(false)
 
   const currentAge = ageOnToday(birthDate)
   const canSaveProfile = profile && (currency !== profile.baseCurrency || birthDate !== profile.birthDate || sex !== profile.sex || expectedLifespan !== profile.expectedLifespan)
@@ -126,6 +134,26 @@ export function Settings({ locale, profile, saving, onClose, onSaveProfile, onEx
     finally { event.target.value = '' }
   }
 
+  async function addAssetCategory() {
+    if (!newCategory.trim()) return
+    try { setCategoryBusy(true); setCustomCategories(await onCreateAssetCategory(newCategory)); setNewCategory(''); setMessage(undefined) }
+    catch (reason) { setMessage(reason instanceof Error ? reason.message : tr(locale, 'Unable to add this category.', 'Impossible d’ajouter cette catégorie.')) }
+    finally { setCategoryBusy(false) }
+  }
+
+  async function renameAssetCategory(currentName: string, name: string) {
+    try { setCategoryBusy(true); setCustomCategories(await onRenameAssetCategory(currentName, name)); setMessage(tr(locale, 'Category updated.', 'Catégorie mise à jour.')) }
+    catch (reason) { setMessage(reason instanceof Error ? reason.message : tr(locale, 'Unable to rename this category.', 'Impossible de renommer cette catégorie.')) }
+    finally { setCategoryBusy(false) }
+  }
+
+  async function deleteAssetCategory(name: string) {
+    if (!window.confirm(tr(locale, `Delete the category “${name}”?`, `Supprimer la catégorie « ${name} » ?`))) return
+    try { setCategoryBusy(true); setCustomCategories(await onDeleteAssetCategory(name)); setMessage(tr(locale, 'Category deleted.', 'Catégorie supprimée.')) }
+    catch (reason) { setMessage(reason instanceof Error ? reason.message : tr(locale, 'Unable to delete this category.', 'Impossible de supprimer cette catégorie.')) }
+    finally { setCategoryBusy(false) }
+  }
+
   return (
     <div className="fixed inset-0 z-30 overflow-y-auto bg-inkDeep/70 p-4 backdrop-blur-sm">
       <section aria-modal="true" aria-label={tr(locale, 'Settings', 'Paramètres')} className="glass mx-auto my-6 w-full max-w-xl rounded-3xl p-6" role="dialog">
@@ -191,6 +219,20 @@ export function Settings({ locale, profile, saving, onClose, onSaveProfile, onEx
           </article>}
 
           <article className="rounded-2xl border border-white/10 bg-white/5 p-4">
+            <p className="text-sm font-medium text-mist">{tr(locale, 'Asset categories', 'Catégories d’actifs')}</p>
+            <p className="mt-1 text-xs leading-5 text-muted">{tr(locale, 'Built-in categories are translated automatically. Add personal categories for classifications that match your life.', 'Les catégories intégrées sont traduites automatiquement. Ajoutez vos propres catégories pour adapter le classement à votre patrimoine.')}</p>
+            <div className="mt-3 flex flex-wrap gap-2">{builtInAssetKinds.map((kind) => <span className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs text-mist" key={kind}>{assetKindLabel(locale, kind)}</span>)}</div>
+            <div className="mt-4 space-y-2 border-t border-white/10 pt-4">
+              {customCategories.map((category) => <AssetCategoryRow busy={categoryBusy} category={category} key={category.name} locale={locale} onRename={renameAssetCategory} onDelete={deleteAssetCategory} />)}
+              {customCategories.length === 0 && <p className="text-xs text-muted">{tr(locale, 'No personal category yet.', 'Aucune catégorie personnelle pour le moment.')}</p>}
+            </div>
+            <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+              <input aria-label={tr(locale, 'New asset category', 'Nouvelle catégorie d’actifs')} className="field" maxLength={80} placeholder={tr(locale, 'For example: Vehicles', 'Par exemple : Véhicules')} value={newCategory} onChange={(event) => setNewCategory(event.target.value)} />
+              <button className="ghost-button shrink-0" disabled={categoryBusy || !newCategory.trim()} onClick={() => void addAssetCategory()}>{tr(locale, 'Add category', 'Ajouter')}</button>
+            </div>
+          </article>
+
+          <article className="rounded-2xl border border-white/10 bg-white/5 p-4">
             <p className="text-sm font-medium text-mist">{tr(locale, 'Import bank or Revolut CSV', 'Importer un CSV bancaire ou Revolut')}</p>
             <p className="mt-1 text-xs leading-5 text-muted">{tr(locale, 'The file is analysed only in memory on your local server. Transactions are not saved.', 'Le fichier est analysé uniquement en mémoire sur votre serveur local. Les transactions ne sont pas enregistrées.')}</p>
             <label className="ghost-button mt-3 inline-flex cursor-pointer">{tr(locale, 'Choose CSV file', 'Choisir un fichier CSV')}<input accept=".csv,text/csv" className="sr-only" type="file" onChange={(event) => void analyseCsv(event)} /></label>
@@ -242,4 +284,11 @@ export function Settings({ locale, profile, saving, onClose, onSaveProfile, onEx
       </section>
     </div>
   )
+}
+
+/** Edits one personal category without losing its original identity during a rename. */
+function AssetCategoryRow({ category, locale, busy, onRename, onDelete }: { category: AssetCategory; locale: Locale; busy: boolean; onRename: (currentName: string, name: string) => Promise<void>; onDelete: (name: string) => Promise<void> }) {
+  const [name, setName] = useState(category.name)
+  const changed = name.trim() !== category.name
+  return <div className="rounded-xl border border-white/10 bg-white/5 p-3"><div className="flex flex-col gap-2 sm:flex-row sm:items-center"><input aria-label={tr(locale, `Edit ${category.name}`, `Modifier ${category.name}`)} className="field min-w-0" maxLength={80} value={name} onChange={(event) => setName(event.target.value)} /><div className="flex shrink-0 gap-2"><button className="ghost-button px-3 py-2" disabled={busy || !changed || !name.trim()} onClick={() => void onRename(category.name, name)}>{tr(locale, 'Save', 'Enregistrer')}</button><button className="rounded-xl border border-danger/30 px-3 py-2 text-xs text-danger transition hover:bg-danger/10 disabled:cursor-not-allowed disabled:opacity-50" disabled={busy || category.assetCount > 0} title={category.assetCount > 0 ? tr(locale, 'Reassign the assets before deleting this category.', 'Changez d’abord la catégorie des actifs concernés.') : undefined} onClick={() => void onDelete(category.name)}>{tr(locale, 'Delete', 'Supprimer')}</button></div></div><p className="mt-2 text-xs text-muted">{category.assetCount} {tr(locale, category.assetCount === 1 ? 'asset uses this category' : 'assets use this category', category.assetCount === 1 ? 'actif utilise cette catégorie' : 'actifs utilisent cette catégorie')}</p></div>
 }

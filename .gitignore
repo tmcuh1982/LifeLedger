@@ -11,6 +11,7 @@ data/
 !src/LifeLedger.Api/data/Migrations/
 !src/LifeLedger.Api/data/Migrations/*.cs
 src/LifeLedger.Api/data/logs/
+src/LifeLedger.Api/Data/*.local.json
 *.db
 *.db-shm
 *.db-wal

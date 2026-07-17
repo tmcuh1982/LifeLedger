@@ -20,5 +20,8 @@ public sealed record ImportRequest(LifeLedgerExport Document, bool ReplaceExisti
 /// <summary>Supplies CSV text from a bank or Revolut export for local expense analysis.</summary>
 public sealed record CsvExpenseImportRequest(string Csv);
 
+/// <summary>Supplies the editable name of a user-defined asset category.</summary>
+public sealed record AssetCategoryNameRequest(string Name);
+
 /// <summary>Portable, versioned representation of a profile and its scenarios.</summary>
 public sealed record LifeLedgerExport(int SchemaVersion, DateTimeOffset ExportedAt, Profile Profile, IReadOnlyList<FinancialScenario> Scenarios);

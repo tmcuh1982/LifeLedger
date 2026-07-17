@@ -48,5 +48,8 @@ public sealed record CsvExpenseImportResponse(int Transactions, int Months, deci
 /// <summary>Groups imported expenses using a transparent local keyword rule.</summary>
 public sealed record CsvExpenseCategory(string Name, decimal Total);
 
+/// <summary>Describes a user-defined asset category and how many assets currently use it.</summary>
+public sealed record AssetCategoryResponse(string Name, int AssetCount);
+
 /// <summary>Returns a scenario with the profile required to interpret it.</summary>
 public sealed record ScenarioDetail(FinancialScenario Scenario, Profile Profile);

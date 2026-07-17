@@ -104,6 +104,8 @@ public sealed class Asset
     public string Name { get; set; } = string.Empty;
     /// <summary>Business category of the asset.</summary>
     public AssetKind Kind { get; set; }
+    /// <summary>Optional user-defined display category; <see cref="Kind"/> remains the technical calculation type.</summary>
+    public string? CustomCategory { get; set; }
     /// <summary>Current market value in <see cref="Currency"/>.</summary>
     public decimal CurrentValue { get; set; }
     /// <summary>Expected annual gross return as a fraction.</summary>

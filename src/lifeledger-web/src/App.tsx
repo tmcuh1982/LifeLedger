@@ -5,7 +5,7 @@ import { MetricCard } from './components/MetricCard'
 import { Planner } from './components/Planner'
 import { Settings } from './components/Settings'
 import { getCopy, localeNames, locales, type Locale } from './i18n'
-import type { Dashboard, LifeLedgerExport, NetWorthSnapshot, Profile, ScenarioData, ScenarioSummary, Simulation, SimulationMode } from './types'
+import type { AssetCategory, Dashboard, LifeLedgerExport, NetWorthSnapshot, Profile, ScenarioData, ScenarioSummary, Simulation, SimulationMode } from './types'
 
 type Page = 'dashboard' | 'planner' | 'simulator' | 'scenarios' | 'compare'
 const navigation: Array<{ id: Page; label: keyof ReturnType<typeof getCopy>; icon: string }> = [
@@ -40,6 +40,7 @@ export function App() {
   const [scenarioName, setScenarioName] = useState('')
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [profile, setProfile] = useState<Profile>()
+  const [assetCategories, setAssetCategories] = useState<AssetCategory[]>([])
   const [savingSettings, setSavingSettings] = useState(false)
 
   const selected = useMemo(() => scenarios.find((scenario) => scenario.id === selectedId), [scenarios, selectedId])
@@ -59,8 +60,9 @@ export function App() {
   async function refresh() {
     try {
       setLoading(true); setError(undefined)
-      const nextScenarios = await api.scenarios()
+      const [nextScenarios, nextAssetCategories] = await Promise.all([api.scenarios(), api.assetCategories()])
       setScenarios(nextScenarios)
+      setAssetCategories(nextAssetCategories)
       const id = selectedId && nextScenarios.some((scenario) => scenario.id === selectedId)
         ? selectedId
         : nextScenarios.find((scenario) => scenario.isBaseline)?.id ?? nextScenarios[0]?.id
@@ -114,9 +116,16 @@ export function App() {
   }
 
   async function openSettings() {
-    try { setProfile(selected ? await api.profile(selected.profileId) : undefined); setSettingsOpen(true) }
+    try {
+      const [nextProfile, nextAssetCategories] = await Promise.all([selected ? api.profile(selected.profileId) : Promise.resolve(undefined), api.assetCategories()])
+      setProfile(nextProfile); setAssetCategories(nextAssetCategories); setSettingsOpen(true)
+    }
     catch (reason) { setError(reason instanceof Error ? reason.message : 'Could not load settings.') }
   }
+
+  async function createAssetCategory(name: string) { await api.createAssetCategory(name); const categories = await api.assetCategories(); setAssetCategories(categories); return categories }
+  async function renameAssetCategory(currentName: string, name: string) { await api.renameAssetCategory(currentName, name); const categories = await api.assetCategories(); setAssetCategories(categories); if (selectedId) await loadScenario(selectedId); return categories }
+  async function deleteAssetCategory(name: string) { await api.deleteAssetCategory(name); const categories = await api.assetCategories(); setAssetCategories(categories); return categories }
 
   async function saveProfileSettings(updatedProfile: Profile) {
     if (!profile) return
@@ -182,8 +191,8 @@ export function App() {
           </header>
 
           {error && <div className="mb-6 flex items-center justify-between gap-4 rounded-2xl border border-danger/30 bg-danger/10 px-4 py-3 text-sm text-danger"><span>{error}</span><button className="text-xs font-bold uppercase" onClick={() => setError(undefined)}>{tr(locale, 'Dismiss', 'Fermer')}</button></div>}
-          {loading && !dashboard ? <Loading locale={locale} /> : !selected || !dashboard ? <Empty locale={locale} /> : page === 'dashboard' ? <><DashboardPage dashboard={dashboard} locale={locale} onPlan={() => setPage('planner')} /><ActualNetWorthHistorySection history={netWorthHistory} currency={dashboard.currency} locale={locale} /></> : page === 'planner' && data ? <Planner data={data} scenarioId={selected.id} currency={currency} locale={locale} onCreate={createItem} onUpdate={updateItem} onDelete={deleteItem} /> : page === 'simulator' ? <SimulatorPage dashboard={dashboard} simulation={simulation} locale={locale} onRun={runSimulation} /> : page === 'compare' ? <ScenarioComparisonPage scenarios={scenarios} locale={locale} onBack={() => setPage('scenarios')} /> : <ScenariosPage scenarios={scenarios} selectedId={selected.id} name={scenarioName} creating={creating} locale={locale} onName={setScenarioName} onSubmit={createScenario} onSelect={selectScenario} onCompare={() => setPage('compare')} />}
-          {settingsOpen && <Settings locale={locale} profile={profile} saving={savingSettings} onClose={() => setSettingsOpen(false)} onSaveProfile={saveProfileSettings} onExport={downloadExport} onRestore={restoreBackup} onResetMarketHistory={resetMarketHistory} onResetNetWorthHistory={resetNetWorthHistory} onDeleteAllData={deleteAllData} />}
+          {loading && !dashboard ? <Loading locale={locale} /> : !selected || !dashboard ? <Empty locale={locale} /> : page === 'dashboard' ? <><DashboardPage dashboard={dashboard} locale={locale} onPlan={() => setPage('planner')} /><ActualNetWorthHistorySection history={netWorthHistory} currency={dashboard.currency} locale={locale} /></> : page === 'planner' && data ? <Planner data={data} scenarioId={selected.id} assetCategories={assetCategories} currency={currency} locale={locale} onCreate={createItem} onUpdate={updateItem} onDelete={deleteItem} /> : page === 'simulator' ? <SimulatorPage dashboard={dashboard} simulation={simulation} locale={locale} onRun={runSimulation} /> : page === 'compare' ? <ScenarioComparisonPage scenarios={scenarios} locale={locale} onBack={() => setPage('scenarios')} /> : <ScenariosPage scenarios={scenarios} selectedId={selected.id} name={scenarioName} creating={creating} locale={locale} onName={setScenarioName} onSubmit={createScenario} onSelect={selectScenario} onCompare={() => setPage('compare')} />}
+          {settingsOpen && <Settings locale={locale} profile={profile} assetCategories={assetCategories} saving={savingSettings} onClose={() => setSettingsOpen(false)} onSaveProfile={saveProfileSettings} onCreateAssetCategory={createAssetCategory} onRenameAssetCategory={renameAssetCategory} onDeleteAssetCategory={deleteAssetCategory} onExport={downloadExport} onRestore={restoreBackup} onResetMarketHistory={resetMarketHistory} onResetNetWorthHistory={resetNetWorthHistory} onDeleteAllData={deleteAllData} />}
         </div>
       </div>
     </main>

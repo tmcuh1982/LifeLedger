@@ -29,6 +29,11 @@ export interface NetWorthSnapshot {
   currency: string
 }
 
+export interface AssetCategory {
+  name: string
+  assetCount: number
+}
+
 export interface AllocationSlice {
   name: string
   kind: string

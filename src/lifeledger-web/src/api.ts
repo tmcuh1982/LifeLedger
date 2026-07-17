@@ -1,4 +1,4 @@
-import type { Dashboard, LifeLedgerExport, NetWorthSnapshot, Profile, ScenarioData, ScenarioSummary, Simulation, SimulationMode } from './types'
+import type { AssetCategory, Dashboard, LifeLedgerExport, NetWorthSnapshot, Profile, ScenarioData, ScenarioSummary, Simulation, SimulationMode } from './types'
 
 const baseUrl = import.meta.env.VITE_API_URL ?? '/api'
 
@@ -17,6 +17,10 @@ export const api = {
   profile: (id: string) => request<Profile>(`/profiles/${id}`),
   updateProfile: (profile: Profile) => request<Profile>(`/profiles/${profile.id}`, { method: 'PUT', body: JSON.stringify(profile) }),
   currencies: () => request<Array<{ code: string; unitsPerEuro: number; updatedAt: string; source: string; isStale: boolean }>>('/currencies'),
+  assetCategories: () => request<AssetCategory[]>('/asset-categories'),
+  createAssetCategory: (name: string) => request<AssetCategory>('/asset-categories', { method: 'POST', body: JSON.stringify({ name }) }),
+  renameAssetCategory: (currentName: string, name: string) => request<AssetCategory>(`/asset-categories/${encodeURIComponent(currentName)}`, { method: 'PUT', body: JSON.stringify({ name }) }),
+  deleteAssetCategory: (name: string) => request<void>(`/asset-categories/${encodeURIComponent(name)}`, { method: 'DELETE' }),
   refreshCurrencies: () => request<Array<{ code: string; unitsPerEuro: number; updatedAt: string; source: string; isStale: boolean }>>('/currencies/refresh', { method: 'POST' }),
   refreshMarketPrices: () => request<Array<{ assetId: string; ticker: string; updated: boolean; price?: number; currency?: string; error?: string }>>('/market/refresh', { method: 'POST' }),
   assetHistory: (assetId: string) => request<Array<{ capturedAt: string; price: number; currency: string; source: string }>>(`/assets/${assetId}/history`),
