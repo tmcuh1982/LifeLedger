@@ -82,12 +82,25 @@ public sealed class LocalCurrencyService(string cachePath, IHttpClientFactory ht
     /// <summary>Retrieves a validated rate or explains how the user can make it available.</summary>
     private StoredRate GetRate(string currency)
     {
-        currency = string.IsNullOrWhiteSpace(currency) ? "EUR" : currency.Trim().ToUpperInvariant();
+        currency = NormalizeCurrency(currency);
         lock (_gate)
         {
             if (_rates.TryGetValue(currency, out var rate)) return rate;
         }
         throw new InvalidOperationException($"No conversion rate is available for {currency}. Add it manually or refresh ECB rates.");
+    }
+
+    /// <summary>Maps common currency names entered by non-specialists to their ISO 4217 codes.</summary>
+    private static string NormalizeCurrency(string currency)
+    {
+        var value = string.IsNullOrWhiteSpace(currency) ? "EUR" : currency.Trim().ToUpperInvariant();
+        return value switch
+        {
+            "ZLOTY" or "ZŁOTY" or "ZLOTYS" or "ZŁOTE" => "PLN",
+            "EURO" or "EUROS" => "EUR",
+            "DOLLAR" or "DOLLARS" or "US DOLLAR" or "US DOLLARS" => "USD",
+            _ => value
+        };
     }
 
     /// <summary>Loads the last valid local cache and falls back to a small offline starter set.</summary>
