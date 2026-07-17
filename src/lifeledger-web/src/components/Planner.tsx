@@ -6,6 +6,7 @@ import type { LedgerItem, ScenarioData } from '../types'
 
 type Resource = keyof ScenarioData
 type Draft = Record<string, string | boolean>
+type CurrencyRate = { code: string; unitsPerEuro: number; source: string; isStale: boolean }
 
 interface PlannerProps {
   data: ScenarioData
@@ -64,6 +65,14 @@ function money(amount: number, currency: string, locale: Locale) {
   return new Intl.NumberFormat(locale, { style: 'currency', currency, maximumFractionDigits: 0, signDisplay: amount < 0 ? 'always' : 'auto' }).format(amount)
 }
 
+/** Converts a displayed item amount through the locally cached units-per-euro rates. */
+function convertMoney(amount: number, fromCurrency: string, toCurrency: string, rates: CurrencyRate[]) {
+  if (fromCurrency === toCurrency) return amount
+  const fromRate = rates.find((rate) => rate.code === fromCurrency)?.unitsPerEuro
+  const toRate = rates.find((rate) => rate.code === toCurrency)?.unitsPerEuro
+  return fromRate && toRate ? amount / fromRate * toRate : undefined
+}
+
 function newDraft(resource: Resource, currency: string): Draft {
   const base = { name: '', currency, startsOn: today(), endsOn: '' }
   if (resource === 'incomes') return { ...base, kind: 'Salary', monthlyAmount: '', annualGrowthRate: '2', isTaxable: true, taxRate: '0', taxCountryCode: '' }
@@ -99,7 +108,7 @@ export function Planner({ data, currency, locale, onCreate, onUpdate, onDelete }
   const [active, setActive] = useState<{ resource: Resource; item?: LedgerItem } | null>(null)
   const [draft, setDraft] = useState<Draft>({})
   const [submitting, setSubmitting] = useState(false)
-  const [rates, setRates] = useState<Array<{ code: string; unitsPerEuro: number; source: string; isStale: boolean }>>([])
+  const [rates, setRates] = useState<CurrencyRate[]>([])
   const [refreshingRates, setRefreshingRates] = useState(false)
   const t = copy(locale)
   const definitions = useMemo(() => resourceDefinitions(locale), [locale])
@@ -128,7 +137,12 @@ export function Planner({ data, currency, locale, onCreate, onUpdate, onDelete }
     finally { setSubmitting(false) }
   }
 
-  return <section className="space-y-5"><div><p className="eyebrow">{t.eyebrow}</p><h1 className="mt-2 text-3xl font-semibold text-white">{t.title}</h1><p className="mt-2 max-w-2xl text-sm leading-6 text-muted">{t.intro}</p></div><article className="section-card"><div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center"><div><p className="eyebrow">{locale === 'fr' ? 'Devises' : 'Currencies'}</p><p className="mt-1 text-sm text-muted">{locale === 'fr' ? 'Taux enregistrés localement, exprimés pour 1 EUR.' : 'Rates cached locally, quoted per 1 EUR.'}</p></div><button className="ghost-button" disabled={refreshingRates} onClick={() => void refreshRates()}>{refreshingRates ? (locale === 'fr' ? 'Actualisation…' : 'Refreshing…') : (locale === 'fr' ? 'Actualiser les taux BCE' : 'Refresh ECB rates')}</button></div><div className="mt-4 flex flex-wrap gap-2">{rates.slice(0, 8).map((rate) => <span className="rounded-xl bg-white/5 px-3 py-2 text-xs text-mist" key={rate.code}>{rate.code} · {rate.unitsPerEuro.toFixed(4)} {rate.isStale ? '⚠' : ''}</span>)}</div></article><div className="grid gap-4 xl:grid-cols-2">{definitions.map((definition) => <article className="section-card" key={definition.resource}><div className="flex items-start justify-between gap-4"><div><span className="grid h-9 w-9 place-items-center rounded-xl bg-white/10 text-sky">{definition.symbol}</span><h2 className="mt-4 text-lg font-semibold text-white">{definition.title}</h2><p className="mt-1 text-sm leading-5 text-muted">{definition.description}</p></div><button className="ghost-button shrink-0" onClick={() => open(definition.resource)}>{t.add}</button></div><div className="mt-5 divide-y divide-white/10 border-y border-white/10">{data[definition.resource].length === 0 ? <p className="py-4 text-sm text-muted">{t.none}</p> : data[definition.resource].map((item) => <div className="flex items-center justify-between gap-4 py-3" key={item.id}><button className="min-w-0 text-left" onClick={() => open(definition.resource, item)}><p className="truncate text-sm font-medium text-mist">{item.name}</p><p className="mt-0.5 text-xs text-muted">{item.kind ?? (definition.resource === 'investments' ? t.monthlyContribution : '')}{item.ticker ? ` · ${String(item.ticker)}` : ''}</p></button><div className="flex shrink-0 items-center gap-3"><span className="text-sm text-sky">{money(itemValue(item, definition.resource), currency, locale)}</span><button className="text-xs text-muted transition hover:text-mist" onClick={() => open(definition.resource, item)}>{t.edit}</button><button className="text-xs text-muted transition hover:text-danger" onClick={() => void onDelete(definition.resource, item.id)}>{t.remove}</button></div></div>)}</div></article>)}</div>{active && <Editor assetId={active.item?.id} resource={active.resource} draft={draft} currencies={availableCurrencies} locale={locale} submitting={submitting} editing={Boolean(active.item)} onField={setField} onCancel={() => setActive(null)} onSubmit={submit} />}</section>
+  return <section className="space-y-5"><div><p className="eyebrow">{t.eyebrow}</p><h1 className="mt-2 text-3xl font-semibold text-white">{t.title}</h1><p className="mt-2 max-w-2xl text-sm leading-6 text-muted">{t.intro}</p></div><article className="section-card"><div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center"><div><p className="eyebrow">{locale === 'fr' ? 'Devises' : 'Currencies'}</p><p className="mt-1 text-sm text-muted">{locale === 'fr' ? 'Taux enregistrés localement, exprimés pour 1 EUR.' : 'Rates cached locally, quoted per 1 EUR.'}</p></div><button className="ghost-button" disabled={refreshingRates} onClick={() => void refreshRates()}>{refreshingRates ? (locale === 'fr' ? 'Actualisation…' : 'Refreshing…') : (locale === 'fr' ? 'Actualiser les taux BCE' : 'Refresh ECB rates')}</button></div><div className="mt-4 flex flex-wrap gap-2">{rates.slice(0, 8).map((rate) => <span className="rounded-xl bg-white/5 px-3 py-2 text-xs text-mist" key={rate.code}>{rate.code} · {rate.unitsPerEuro.toFixed(4)} {rate.isStale ? '⚠' : ''}</span>)}</div></article><div className="grid gap-4 xl:grid-cols-2">{definitions.map((definition) => <article className="section-card" key={definition.resource}><div className="flex items-start justify-between gap-4"><div><span className="grid h-9 w-9 place-items-center rounded-xl bg-white/10 text-sky">{definition.symbol}</span><h2 className="mt-4 text-lg font-semibold text-white">{definition.title}</h2><p className="mt-1 text-sm leading-5 text-muted">{definition.description}</p></div><button className="ghost-button shrink-0" onClick={() => open(definition.resource)}>{t.add}</button></div><div className="mt-5 divide-y divide-white/10 border-y border-white/10">{data[definition.resource].length === 0 ? <p className="py-4 text-sm text-muted">{t.none}</p> : data[definition.resource].map((item) => {
+          const amount = itemValue(item, definition.resource)
+          const itemCurrency = normaliseCurrency(String(item.currency ?? currency))
+          const convertedAmount = convertMoney(amount, itemCurrency, currency, rates)
+          return <div className="flex items-center justify-between gap-4 py-3" key={item.id}><button className="min-w-0 text-left" onClick={() => open(definition.resource, item)}><p className="truncate text-sm font-medium text-mist">{item.name}</p><p className="mt-0.5 text-xs text-muted">{item.kind ?? (definition.resource === 'investments' ? t.monthlyContribution : '')}{item.ticker ? ` · ${String(item.ticker)}` : ''}</p></button><div className="flex shrink-0 items-center gap-3"><div className="text-right"><p className="text-sm text-sky">{money(amount, itemCurrency, locale)}</p>{itemCurrency !== currency && convertedAmount !== undefined && <p className="mt-0.5 text-xs text-muted">≈ {money(convertedAmount, currency, locale)}</p>}</div><button className="text-xs text-muted transition hover:text-mist" onClick={() => open(definition.resource, item)}>{t.edit}</button><button className="text-xs text-muted transition hover:text-danger" onClick={() => void onDelete(definition.resource, item.id)}>{t.remove}</button></div></div>
+        })}</div></article>)}</div>{active && <Editor assetId={active.item?.id} resource={active.resource} draft={draft} currencies={availableCurrencies} locale={locale} submitting={submitting} editing={Boolean(active.item)} onField={setField} onCancel={() => setActive(null)} onSubmit={submit} />}</section>
 }
 
 function Editor({ assetId, resource, draft, currencies, locale, submitting, editing, onField, onCancel, onSubmit }: { assetId?: string; resource: Resource; draft: Draft; currencies: string[]; locale: Locale; submitting: boolean; editing: boolean; onField: (name: string, value: string | boolean) => void; onCancel: () => void; onSubmit: (event: FormEvent) => Promise<void> }) {
