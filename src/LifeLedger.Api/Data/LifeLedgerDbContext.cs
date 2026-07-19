@@ -89,6 +89,7 @@ public sealed class LifeLedgerDbContext(DbContextOptions<LifeLedgerDbContext> op
         modelBuilder.Entity<Asset>().Property(x => x.ExternalProvider).HasMaxLength(80);
         modelBuilder.Entity<Asset>().Property(x => x.ExternalId).HasMaxLength(160);
         modelBuilder.Entity<Asset>().Property(x => x.IsIncludedInPortfolioAllocation).HasDefaultValue(true);
+        modelBuilder.Entity<Asset>().Property(x => x.OwnershipRate).HasDefaultValue(1m);
         modelBuilder.Entity<Asset>().HasIndex(x => new { x.ScenarioId, x.ExternalProvider, x.ExternalId }).IsUnique();
         modelBuilder.Entity<AssetCharacteristicProfile>().HasKey(x => x.AssetId);
         modelBuilder.Entity<AssetCharacteristicProfile>().Property(x => x.DefinitionKey).HasMaxLength(80);
@@ -103,6 +104,7 @@ public sealed class LifeLedgerDbContext(DbContextOptions<LifeLedgerDbContext> op
         modelBuilder.Entity<AssetValuationSnapshot>().Property(x => x.Source).HasMaxLength(160);
         modelBuilder.Entity<AssetValuationSnapshot>().HasOne(x => x.Asset).WithMany(x => x.ValuationSnapshots).HasForeignKey(x => x.AssetId).OnDelete(DeleteBehavior.Cascade);
         modelBuilder.Entity<FinancialScenario>().HasMany(x => x.Liabilities).WithOne(x => x.Scenario).HasForeignKey(x => x.ScenarioId).OnDelete(DeleteBehavior.Cascade);
+        modelBuilder.Entity<Liability>().Property(x => x.ResponsibilityRate).HasDefaultValue(1m);
         modelBuilder.Entity<FinancialScenario>().HasMany(x => x.Expenses).WithOne(x => x.Scenario).HasForeignKey(x => x.ScenarioId).OnDelete(DeleteBehavior.Cascade);
         modelBuilder.Entity<Expense>().HasOne(x => x.LinkedAsset).WithMany().HasForeignKey(x => x.LinkedAssetId).OnDelete(DeleteBehavior.SetNull);
         modelBuilder.Entity<Expense>().Property(x => x.ObservedBankCategory).HasMaxLength(80);

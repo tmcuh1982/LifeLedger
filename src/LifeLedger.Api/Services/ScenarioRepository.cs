@@ -25,7 +25,7 @@ public sealed class ScenarioRepository(LifeLedgerDbContext db) : IScenarioReposi
             .Include(x => x.Assets).ThenInclude(x => x.CharacteristicProfile)
             .Include(x => x.Assets).ThenInclude(x => x.LiabilityLinks)
             .Include(x => x.Assets).ThenInclude(x => x.ValuationSnapshots)
-            .Include(x => x.Liabilities)
+            .Include(x => x.Liabilities).ThenInclude(x => x.AssetLinks)
             .Include(x => x.Expenses).ThenInclude(x => x.AmountChanges)
             .Include(x => x.Investments)
             .Include(x => x.AssetSales)

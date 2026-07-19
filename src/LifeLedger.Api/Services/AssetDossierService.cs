@@ -80,6 +80,7 @@ public sealed class AssetDossierService(LifeLedgerDbContext db, IAssetProfileCat
         if (string.IsNullOrWhiteSpace(request.Name)) errors["name"] = ["An asset name is required."];
         if (request.Currency.Trim().Length != 3 || !request.Currency.Trim().All(char.IsAsciiLetter)) errors["currency"] = ["Use a three-letter ISO 4217 currency code."];
         if (request.CurrentValue < 0 || request.PurchasePrice < 0 || request.AcquisitionCosts < 0) errors["amounts"] = ["Asset amounts cannot be negative."];
+        if (request.OwnershipRate is <= 0 or > 1) errors["ownershipRate"] = ["The owned share must be greater than 0% and at most 100%."];
 
         var allocations = request.LiabilityAllocations ?? [];
         if (allocations.Select(allocation => allocation.LiabilityId).Distinct().Count() != allocations.Count)
@@ -111,6 +112,7 @@ public sealed class AssetDossierService(LifeLedgerDbContext db, IAssetProfileCat
         asset.Kind = request.Kind;
         asset.CustomCategory = string.IsNullOrWhiteSpace(request.CustomCategory) ? null : request.CustomCategory.Trim();
         asset.CurrentValue = request.CurrentValue;
+        asset.OwnershipRate = request.OwnershipRate;
         asset.PurchasePrice = request.PurchasePrice;
         asset.AcquisitionCosts = request.AcquisitionCosts;
         asset.PurchasedOn = request.PurchasedOn;
@@ -160,14 +162,16 @@ public sealed class AssetDossierService(LifeLedgerDbContext db, IAssetProfileCat
     /// <summary>Calculates gain and equity from typed amounts; dynamic profile fields never enter financial calculations.</summary>
     private AssetPerformanceResponse CalculatePerformance(Asset asset)
     {
-        var basis = asset.PurchasePrice + asset.AcquisitionCosts;
-        var gain = asset.CurrentValue - basis;
+        var ownedValue = asset.CurrentValue * asset.OwnershipRate;
+        var basis = (asset.PurchasePrice + asset.AcquisitionCosts) * asset.OwnershipRate;
+        var gain = ownedValue - basis;
         decimal linkedDebt = 0m;
         foreach (var link in asset.LiabilityLinks.Where(link => link.Liability is not null))
         {
             // Every debt is converted before allocation so multi-currency equity remains meaningful.
-            linkedDebt += currencies.Convert(link.Liability!.OutstandingBalance, link.Liability.Currency, asset.Currency) * link.AllocationRate;
+            linkedDebt += currencies.Convert(link.Liability!.OutstandingBalance, link.Liability.Currency, asset.Currency)
+                * link.Liability.ResponsibilityRate * link.AllocationRate;
         }
-        return new AssetPerformanceResponse(asset.Currency, basis, gain, basis > 0 ? gain / basis : null, Math.Round(linkedDebt, 4), Math.Round(asset.CurrentValue - linkedDebt, 4));
+        return new AssetPerformanceResponse(asset.Currency, basis, gain, basis > 0 ? gain / basis : null, Math.Round(linkedDebt, 4), Math.Round(ownedValue - linkedDebt, 4));
     }
 }

@@ -2,9 +2,41 @@
 @tailwind components;
 @tailwind utilities;
 
-:root { color: #dae2fd; background: #0b1326; font-synthesis: none; }
+:root {
+  --color-ink: 11 19 38;
+  --color-ink-deep: 6 14 32;
+  --color-panel: 23 31 51;
+  --color-panel-high: 34 42 61;
+  --color-mist: 218 226 253;
+  --color-muted: 196 199 200;
+  --color-sky: 173 201 235;
+  --color-ocean: 48 75 104;
+  --color-success: 185 246 200;
+  --color-warning: 255 221 176;
+  --color-danger: 255 180 171;
+  color: rgb(var(--color-mist));
+  background: rgb(var(--color-ink));
+  color-scheme: dark;
+  font-synthesis: none;
+}
+
+:root[data-theme='light'] {
+  --color-ink: 238 243 249;
+  --color-ink-deep: 226 234 244;
+  --color-panel: 255 255 255;
+  --color-panel-high: 238 243 249;
+  --color-mist: 37 49 69;
+  --color-muted: 91 105 126;
+  --color-sky: 48 95 143;
+  --color-ocean: 113 151 188;
+  --color-success: 18 121 68;
+  --color-warning: 151 87 0;
+  --color-danger: 180 35 24;
+  color-scheme: light;
+}
 * { box-sizing: border-box; }
 body { min-width: 320px; min-height: 100vh; margin: 0; background: radial-gradient(circle at 6% 5%, rgba(48, 75, 104, .72), transparent 30rem), radial-gradient(circle at 94% 8%, rgba(91, 59, 128, .44), transparent 28rem), #0b1326; }
+:root[data-theme='light'] body { background: radial-gradient(circle at 6% 5%, rgba(173, 201, 235, .55), transparent 30rem), radial-gradient(circle at 94% 8%, rgba(220, 202, 237, .48), transparent 28rem), rgb(var(--color-ink)); }
 button, input, select { font: inherit; }
 button { cursor: pointer; }
 ::selection { background: #adc9eb; color: #0b1326; }
@@ -22,3 +54,40 @@ button { cursor: pointer; }
   .ghost-button { @apply rounded-xl border border-white/20 bg-white/5 px-4 py-3 text-xs font-bold uppercase tracking-[0.08em] text-mist transition hover:bg-white/15; }
   .field { @apply w-full rounded-xl border border-white/20 bg-white/10 px-3 py-2.5 text-sm text-mist outline-none placeholder:text-muted focus:border-sky; }
 }
+
+:root[data-theme='light'] .glass {
+  border-color: rgb(71 85 105 / .18);
+  background-color: rgb(255 255 255 / .78);
+  box-shadow: 0 8px 32px rgb(51 65 85 / .10);
+}
+
+:root[data-theme='light'] .modal-surface {
+  border-color: rgb(71 85 105 / .18);
+  box-shadow: 0 18px 55px rgb(51 65 85 / .16);
+}
+
+:root[data-theme='light'] .field {
+  border-color: rgb(71 85 105 / .22);
+  background-color: rgb(255 255 255 / .86);
+}
+
+:root[data-theme='light'] .ghost-button {
+  border-color: rgb(71 85 105 / .22);
+  background-color: rgb(255 255 255 / .62);
+}
+
+:root[data-theme='light'] .primary-button {
+  background-color: rgb(37 49 69);
+  color: white;
+}
+
+:root[data-theme='light'] .nav-item:hover,
+:root[data-theme='light'] .nav-item-active {
+  background-color: rgb(71 85 105 / .11);
+}
+
+:root[data-theme='light'] .text-white { color: rgb(var(--color-mist)); }
+:root[data-theme='light'] .bg-white { background-color: rgb(var(--color-mist)); }
+:root[data-theme='light'] [class*='border-white/'] { border-color: rgb(71 85 105 / .16); }
+:root[data-theme='light'] [class*='bg-white/'] { background-color: rgb(255 255 255 / .55); }
+:root[data-theme='light'] .recharts-cartesian-axis-tick-value { fill: rgb(var(--color-muted)); }

@@ -32,7 +32,7 @@ public sealed class DataSchemaMigrationService(
     /// <summary>Key used in the local settings table for the business-data format version.</summary>
     public const string DataSchemaVersionKey = "data-schema-version";
     /// <summary>Latest business-data format understood by this application version.</summary>
-    public const int LatestVersion = 6;
+    public const int LatestVersion = 7;
 
     /// <inheritdoc />
     public int CurrentVersion => LatestVersion;

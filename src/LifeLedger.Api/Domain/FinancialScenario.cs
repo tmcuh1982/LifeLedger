@@ -137,6 +137,8 @@ public sealed class Asset
     public string? CustomCategory { get; set; }
     /// <summary>Current market value in <see cref="Currency"/>.</summary>
     public decimal CurrentValue { get; set; }
+    /// <summary>Share of the complete asset legally or economically owned by the profile, between zero and one.</summary>
+    public decimal OwnershipRate { get; set; } = 1m;
     /// <summary>Price paid for the asset in <see cref="Currency"/>; zero means it is not known.</summary>
     public decimal PurchasePrice { get; set; }
     /// <summary>Acquisition fees and taxes paid in <see cref="Currency"/>.</summary>
@@ -300,6 +302,8 @@ public sealed class Liability
     public LiabilityKind Kind { get; set; }
     /// <summary>Principal currently outstanding in <see cref="Currency"/>.</summary>
     public decimal OutstandingBalance { get; set; }
+    /// <summary>Share of the complete liability for which the profile is personally responsible, between zero and one.</summary>
+    public decimal ResponsibilityRate { get; set; } = 1m;
     /// <summary>Annual interest rate expressed as a fraction.</summary>
     public decimal InterestRate { get; set; }
     /// <summary>Contractual payment made each month.</summary>

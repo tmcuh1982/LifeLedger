@@ -35,8 +35,8 @@ public sealed class NetWorthHistoryService(
             {
                 var profile = scenario.Profile!;
                 // Consolidate every asset and liability before calculating the real observed net worth.
-                var assets = scenario.Assets.Sum(asset => currencies.Convert(asset.CurrentValue, asset.Currency, profile.BaseCurrency));
-                var liabilities = scenario.Liabilities.Sum(liability => currencies.Convert(liability.OutstandingBalance, liability.Currency, profile.BaseCurrency));
+                var assets = scenario.Assets.Sum(asset => currencies.Convert(asset.CurrentValue * asset.OwnershipRate, asset.Currency, profile.BaseCurrency));
+                var liabilities = scenario.Liabilities.Sum(liability => currencies.Convert(liability.OutstandingBalance * liability.ResponsibilityRate, liability.Currency, profile.BaseCurrency));
                 db.NetWorthSnapshots.Add(new NetWorthSnapshot
                 {
                     ProfileId = profile.Id,

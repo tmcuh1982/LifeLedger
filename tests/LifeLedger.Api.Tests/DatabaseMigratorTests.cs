@@ -113,7 +113,7 @@ public sealed class DatabaseMigratorTests
             await database.SaveChangesAsync();
             var service = new DataSchemaMigrationService(
                 database,
-                [new AssetValuationDataMigration(), new IncomeScheduleDataMigration(), new BankingDataMigration(), new EventCurrencyDataMigration(), new PlannedAssetSaleDataMigration()],
+                [new AssetValuationDataMigration(), new IncomeScheduleDataMigration(), new BankingDataMigration(), new EventCurrencyDataMigration(), new PlannedAssetSaleDataMigration(), new OwnershipDataMigration()],
                 NullLogger<DataSchemaMigrationService>.Instance);
 
             await service.EnsureCurrentAsync();
@@ -123,7 +123,7 @@ public sealed class DatabaseMigratorTests
             Assert.Equal(new DateOnly(2026, 7, 1), snapshot.ValuedOn);
             Assert.Equal("Personal estimate", snapshot.Source);
             var setting = await database.ApplicationSettings.FindAsync(DataSchemaMigrationService.DataSchemaVersionKey);
-            Assert.Equal("6", setting!.Value);
+            Assert.Equal("7", setting!.Value);
         }
         finally
         {
@@ -154,14 +154,14 @@ public sealed class DatabaseMigratorTests
             database.ApplicationSettings.Add(new ApplicationSetting { Key = DataSchemaMigrationService.DataSchemaVersionKey, Value = "2" });
             await database.SaveChangesAsync();
 
-            var service = new DataSchemaMigrationService(database, [new IncomeScheduleDataMigration(), new BankingDataMigration(), new EventCurrencyDataMigration(), new PlannedAssetSaleDataMigration()], NullLogger<DataSchemaMigrationService>.Instance);
+            var service = new DataSchemaMigrationService(database, [new IncomeScheduleDataMigration(), new BankingDataMigration(), new EventCurrencyDataMigration(), new PlannedAssetSaleDataMigration(), new OwnershipDataMigration()], NullLogger<DataSchemaMigrationService>.Instance);
             await service.EnsureCurrentAsync();
 
             var income = await database.Incomes.SingleAsync();
             Assert.Equal(18_000m, income.AnnualAmount);
             Assert.Equal(IncomeAmountMode.Monthly, income.AmountMode);
             var setting = await database.ApplicationSettings.FindAsync(DataSchemaMigrationService.DataSchemaVersionKey);
-            Assert.Equal("6", setting!.Value);
+            Assert.Equal("7", setting!.Value);
         }
         finally
         {
@@ -192,11 +192,11 @@ public sealed class DatabaseMigratorTests
             database.ApplicationSettings.Add(new ApplicationSetting { Key = DataSchemaMigrationService.DataSchemaVersionKey, Value = "4" });
             await database.SaveChangesAsync();
 
-            var service = new DataSchemaMigrationService(database, [new EventCurrencyDataMigration(), new PlannedAssetSaleDataMigration()], NullLogger<DataSchemaMigrationService>.Instance);
+            var service = new DataSchemaMigrationService(database, [new EventCurrencyDataMigration(), new PlannedAssetSaleDataMigration(), new OwnershipDataMigration()], NullLogger<DataSchemaMigrationService>.Instance);
             await service.EnsureCurrentAsync();
 
             Assert.Equal("PLN", (await database.Events.SingleAsync()).Currency);
-            Assert.Equal("6", (await database.ApplicationSettings.FindAsync(DataSchemaMigrationService.DataSchemaVersionKey))!.Value);
+            Assert.Equal("7", (await database.ApplicationSettings.FindAsync(DataSchemaMigrationService.DataSchemaVersionKey))!.Value);
         }
         finally
         {

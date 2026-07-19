@@ -61,12 +61,14 @@ builder.Services.AddScoped<IDataSchemaMigration, IncomeScheduleDataMigration>();
 builder.Services.AddScoped<IDataSchemaMigration, BankingDataMigration>();
 builder.Services.AddScoped<IDataSchemaMigration, EventCurrencyDataMigration>();
 builder.Services.AddScoped<IDataSchemaMigration, PlannedAssetSaleDataMigration>();
+builder.Services.AddScoped<IDataSchemaMigration, OwnershipDataMigration>();
 builder.Services.AddScoped<IDataImportService, DataImportService>();
 builder.Services.AddScoped<IAssetCategoryService, AssetCategoryService>();
 builder.Services.AddScoped<AssetProfileCatalog>();
 builder.Services.AddScoped<IAssetProfileCatalog>(services => services.GetRequiredService<AssetProfileCatalog>());
 builder.Services.AddScoped<ICustomAssetProfileService>(services => services.GetRequiredService<AssetProfileCatalog>());
 builder.Services.AddScoped<IAssetDossierService, AssetDossierService>();
+builder.Services.AddScoped<ILiabilityService, LiabilityService>();
 builder.Services.AddScoped<IAssetValuationHistoryService, AssetValuationHistoryService>();
 builder.Services.AddScoped<IAllocationStrategyService, AllocationStrategyService>();
 builder.Services.AddScoped<IPlannedAssetSaleService, PlannedAssetSaleService>();
@@ -97,20 +99,24 @@ var app = builder.Build();
 app.Use(async (context, next) =>
 {
     var startedAt = Stopwatch.GetTimestamp();
+    var requestFailed = false;
     try
     {
         await next(context);
     }
     catch (Exception exception)
     {
+        requestFailed = true;
         app.Logger.LogError(exception, "Unhandled request {Method} {Path}", context.Request.Method, context.Request.Path);
         throw;
     }
     finally
     {
         var elapsed = Stopwatch.GetElapsedTime(startedAt).TotalMilliseconds;
-        var level = context.Response.StatusCode >= StatusCodes.Status400BadRequest ? LogLevel.Warning : LogLevel.Information;
-        app.Logger.Log(level, "HTTP {Method} {Path} returned {StatusCode} in {ElapsedMs:0} ms", context.Request.Method, context.Request.Path, context.Response.StatusCode, elapsed);
+        // The response still contains its initial 200 while an unhandled exception unwinds; log the effective server result instead.
+        var effectiveStatusCode = requestFailed ? StatusCodes.Status500InternalServerError : context.Response.StatusCode;
+        var level = effectiveStatusCode >= StatusCodes.Status400BadRequest ? LogLevel.Warning : LogLevel.Information;
+        app.Logger.Log(level, "HTTP {Method} {Path} returned {StatusCode} in {ElapsedMs:0} ms", context.Request.Method, context.Request.Path, effectiveStatusCode, elapsed);
     }
 });
 app.UseCors();
@@ -390,7 +396,25 @@ api.MapDelete("/assets/{id:guid}", async (Guid id, LifeLedgerDbContext db, Cance
     await db.SaveChangesAsync(ct);
     return Results.NoContent();
 });
-MapCollection<Liability>(api, "liabilities", (db, id) => db.Liabilities.FindAsync([id]), item => item.Id, (item, id) => item.Id = id, item => item.ScenarioId, (item, scenarioId) => item.ScenarioId = scenarioId);
+api.MapPost("/scenarios/{scenarioId:guid}/liabilities", async (Guid scenarioId, LiabilityRequest request, ILiabilityService liabilities, CancellationToken ct) =>
+{
+    try { var liability = await liabilities.CreateAsync(scenarioId, request, ct); return Results.Created($"/api/liabilities/{liability.Id}", liability); }
+    catch (KeyNotFoundException) { return Results.NotFound(); }
+    catch (LiabilityValidationException exception) { return Results.ValidationProblem(exception.Errors); }
+});
+api.MapPut("/liabilities/{id:guid}", async (Guid id, LiabilityRequest request, ILiabilityService liabilities, CancellationToken ct) =>
+{
+    try { return await liabilities.UpdateAsync(id, request, ct) is { } liability ? Results.Ok(liability) : Results.NotFound(); }
+    catch (LiabilityValidationException exception) { return Results.ValidationProblem(exception.Errors); }
+});
+api.MapDelete("/liabilities/{id:guid}", async (Guid id, LifeLedgerDbContext db, CancellationToken ct) =>
+{
+    var liability = await db.Liabilities.FindAsync([id], ct);
+    if (liability is null) return Results.NotFound();
+    db.Liabilities.Remove(liability);
+    await db.SaveChangesAsync(ct);
+    return Results.NoContent();
+});
 MapExpenseEndpoints(api);
 MapCollection<InvestmentPlan>(api, "investments", (db, id) => db.Investments.FindAsync([id]), item => item.Id, (item, id) => item.Id = id, item => item.ScenarioId, (item, scenarioId) => item.ScenarioId = scenarioId);
 api.MapPost("/scenarios/{scenarioId:guid}/asset-sales", async (Guid scenarioId, PlannedAssetSaleRequest request, IPlannedAssetSaleService sales, CancellationToken ct) =>
@@ -422,7 +446,9 @@ api.MapPost("/scenarios/{id:guid}/simulate", async (Guid id, SimulationRequest r
 
 api.MapGet("/export", async (LifeLedgerDbContext db, IAssetProfileCatalog profileCatalog, CancellationToken ct) =>
 {
-    var profile = await db.Profiles.AsNoTracking().Include(x => x.Careers).OrderBy(x => x.CreatedAt).FirstOrDefaultAsync(ct);
+    var profiles = await db.Profiles.AsNoTracking().Include(x => x.Careers).ToListAsync(ct);
+    // SQLite cannot sort DateTimeOffset columns; the local-first store contains very few profiles, so order them safely in memory.
+    var profile = profiles.OrderBy(x => x.CreatedAt).FirstOrDefault();
     if (profile is null) return Results.NotFound();
     var scenarios = await db.Scenarios.AsNoTracking().Where(x => x.ProfileId == profile.Id).AsSplitQuery()
         .Include(x => x.Assumptions).Include(x => x.Incomes).ThenInclude(x => x.MonthlyAllocations)
@@ -432,7 +458,7 @@ api.MapGet("/export", async (LifeLedgerDbContext db, IAssetProfileCatalog profil
         .Include(x => x.Liabilities).Include(x => x.Expenses).ThenInclude(x => x.AmountChanges).Include(x => x.Investments).Include(x => x.AssetSales).Include(x => x.Events)
         .Include(x => x.AllocationStrategies).ThenInclude(x => x.Targets)
         .Include(x => x.BankAccounts).ThenInclude(x => x.Imports).ThenInclude(x => x.Transactions).ToListAsync(ct);
-    return Results.Ok(new LifeLedgerExport(11, DateTimeOffset.UtcNow, profile, scenarios, await profileCatalog.ExportCustomHistoryAsync(ct)));
+    return Results.Ok(new LifeLedgerExport(12, DateTimeOffset.UtcNow, profile, scenarios, await profileCatalog.ExportCustomHistoryAsync(ct)));
 });
 
 api.MapPost("/import", async (ImportRequest request, IDataImportService importer, CancellationToken ct) =>
@@ -581,10 +607,10 @@ static FinancialScenario CloneScenario(FinancialScenario parent, CreateScenarioR
 {
     var liabilities = parent.Liabilities.ToDictionary(
         source => source.Id,
-        source => new Liability { Name = source.Name, Kind = source.Kind, OutstandingBalance = source.OutstandingBalance, InterestRate = source.InterestRate, MonthlyPayment = source.MonthlyPayment, PaidOffOn = source.PaidOffOn, Currency = source.Currency });
+        source => new Liability { Name = source.Name, Kind = source.Kind, OutstandingBalance = source.OutstandingBalance, ResponsibilityRate = source.ResponsibilityRate, InterestRate = source.InterestRate, MonthlyPayment = source.MonthlyPayment, PaidOffOn = source.PaidOffOn, Currency = source.Currency });
     var assets = parent.Assets.Select(source => new Asset
     {
-        Name = source.Name, Kind = source.Kind, CustomCategory = source.CustomCategory, CurrentValue = source.CurrentValue,
+        Name = source.Name, Kind = source.Kind, CustomCategory = source.CustomCategory, CurrentValue = source.CurrentValue, OwnershipRate = source.OwnershipRate,
         PurchasePrice = source.PurchasePrice, AcquisitionCosts = source.AcquisitionCosts, PurchasedOn = source.PurchasedOn,
         ValuedOn = source.ValuedOn, ValuationSource = source.ValuationSource, ExpectedAnnualReturn = source.ExpectedAnnualReturn,
         Volatility = source.Volatility, IsLiquid = source.IsLiquid, Ticker = source.Ticker, Quantity = source.Quantity,

@@ -66,7 +66,7 @@ public sealed class ProjectionEngine(ICurrencyService currencies, IIncomeSchedul
             .Sum(x => ToBase(scenario, AfterIncomeTax(x, _incomeSchedules.GrossAnnualAmount(x, scenario.StartsOn)) / 12m, x.Currency));
         // Expected asset appreciation is shown separately because it increases wealth but is not spendable cash income.
         var expectedMonthlyPortfolioGrowth = scenario.Assets.Sum(asset =>
-            ToBase(scenario, asset.CurrentValue, asset.Currency) * asset.ExpectedAnnualReturn * (1m - Math.Clamp(asset.CapitalGainsTaxRate, 0m, 1m))) / 12m;
+            OwnedAssetValue(scenario, asset) * asset.ExpectedAnnualReturn * (1m - Math.Clamp(asset.CapitalGainsTaxRate, 0m, 1m))) / 12m;
         // Financial independence is reached when the planned withdrawal rate covers annual expenses.
         // The initial snapshot has no annual expense total, so independence is evaluated from the first complete projected year.
         var fi = timeline.Skip(1).FirstOrDefault(x => x.NetWorth * scenario.Assumptions.SafeWithdrawalRate >= x.Expenses)?.Year;
@@ -131,10 +131,10 @@ public sealed class ProjectionEngine(ICurrencyService currencies, IIncomeSchedul
         var profile = scenario.Profile!;
         var assumptions = scenario.Assumptions;
         // All calculations are consolidated in the profile's base currency before aggregation.
-        var assetValues = scenario.Assets.ToDictionary(asset => asset.Id, asset => ToBase(scenario, asset.CurrentValue, asset.Currency));
+        var assetValues = scenario.Assets.ToDictionary(asset => asset.Id, asset => OwnedAssetValue(scenario, asset));
         var investmentValues = scenario.Investments.ToDictionary(plan => plan.Id, _ => 0m);
         var projectedCash = 0m;
-        var debtValues = scenario.Liabilities.ToDictionary(liability => liability.Id, liability => ToBase(scenario, liability.OutstandingBalance, liability.Currency));
+        var debtValues = scenario.Liabilities.ToDictionary(liability => liability.Id, liability => PersonalDebtValue(scenario, liability));
         var initialDebt = debtValues.Values.Sum();
         var initialNetWorth = assetValues.Values.Sum() - initialDebt;
         var weightedReturn = WeightedReturn(scenario.Assets, scenario);
@@ -310,7 +310,7 @@ public sealed class ProjectionEngine(ICurrencyService currencies, IIncomeSchedul
         .Where(liability => (liability.PaidOffOn is null || date <= liability.PaidOffOn) && debtValues.GetValueOrDefault(liability.Id) > 0m)
         .Sum(liability => Math.Min(
             debtValues.GetValueOrDefault(liability.Id) * (1m + Math.Max(0m, liability.InterestRate) / 12m),
-            ToBase(scenario, liability.MonthlyPayment, liability.Currency)));
+            PersonalDebtPayment(scenario, liability)));
 
     /// <summary>Calculates the cash impact of life events that occur in the selected month.</summary>
     private decimal MonthlyEventImpact(FinancialScenario scenario, DateOnly date) => scenario.Events.Sum(e =>
@@ -382,7 +382,7 @@ public sealed class ProjectionEngine(ICurrencyService currencies, IIncomeSchedul
                 continue;
             }
 
-            var payment = ToBase(scenario, liability.MonthlyPayment, liability.Currency);
+            var payment = PersonalDebtPayment(scenario, liability);
             debtValues[liability.Id] = Math.Max(0m, balance * (1m + Math.Max(0m, liability.InterestRate) / 12m) - payment);
         }
     }
@@ -404,7 +404,7 @@ public sealed class ProjectionEngine(ICurrencyService currencies, IIncomeSchedul
 
             var grossProceeds = sale.UseProjectedValue ? projectedAssetValue : ToBase(scenario, sale.GrossSalePrice, sale.Currency);
             var sellingCosts = ToBase(scenario, sale.SellingCosts, sale.Currency);
-            var acquisitionBasis = ToBase(scenario, asset.PurchasePrice + asset.AcquisitionCosts, asset.Currency);
+            var acquisitionBasis = ToBase(scenario, (asset.PurchasePrice + asset.AcquisitionCosts) * asset.OwnershipRate, asset.Currency);
             var capitalGain = Math.Max(0m, grossProceeds - acquisitionBasis);
             var capitalGainsTax = capitalGain * Math.Clamp(sale.CapitalGainsTaxRate, 0m, 1m);
             var remainingProceeds = grossProceeds - sellingCosts - capitalGainsTax;
@@ -546,9 +546,9 @@ public sealed class ProjectionEngine(ICurrencyService currencies, IIncomeSchedul
     private IReadOnlyList<AllocationSlice> BuildAllocation(FinancialScenario scenario)
     {
         var assets = scenario.Assets.Where(asset => asset.IsIncludedInPortfolioAllocation).ToArray();
-        var total = assets.Sum(x => ToBase(scenario, x.CurrentValue, x.Currency));
+        var total = assets.Sum(x => OwnedAssetValue(scenario, x));
         return assets.GroupBy(asset => string.IsNullOrWhiteSpace(asset.CustomCategory) ? asset.Kind.ToString() : asset.CustomCategory.Trim(), StringComparer.OrdinalIgnoreCase)
-            .Select(group => new AllocationSlice(group.Key, group.Select(asset => asset.Kind).Distinct().Count() == 1 ? group.First().Kind : AssetKind.Other, group.Sum(asset => ToBase(scenario, asset.CurrentValue, asset.Currency)), total == 0 ? 0 : Math.Round(group.Sum(asset => ToBase(scenario, asset.CurrentValue, asset.Currency)) / total * 100m, 2)))
+            .Select(group => new AllocationSlice(group.Key, group.Select(asset => asset.Kind).Distinct().Count() == 1 ? group.First().Kind : AssetKind.Other, group.Sum(asset => OwnedAssetValue(scenario, asset)), total == 0 ? 0 : Math.Round(group.Sum(asset => OwnedAssetValue(scenario, asset)) / total * 100m, 2)))
             .OrderByDescending(slice => slice.Value).ToArray();
     }
 
@@ -581,10 +581,10 @@ public sealed class ProjectionEngine(ICurrencyService currencies, IIncomeSchedul
         var last = timeline[^1];
         if (first.NetWorth > 0 && last.InflationAdjustedNetWorth < first.NetWorth * 0.82m)
             warnings.Add(new SimulationWarning("purchasing-power-drop", Math.Round((1m - last.InflationAdjustedNetWorth / first.NetWorth) * 100m)));
-        if (scenario.Assets.Where(x => x.IsLiquid).Sum(x => ToBase(scenario, x.CurrentValue, x.Currency)) < scenario.Expenses.Sum(x => ToBase(scenario, _expenseSchedules.AmountForOccurrence(x, scenario.StartsOn, scenario.Assumptions.InflationRate) * OccurrencesPerMonth(x, scenario.StartsOn), x.Currency)) * 3m)
+        if (scenario.Assets.Where(x => x.IsLiquid).Sum(x => OwnedAssetValue(scenario, x)) < scenario.Expenses.Sum(x => ToBase(scenario, _expenseSchedules.AmountForOccurrence(x, scenario.StartsOn, scenario.Assumptions.InflationRate) * OccurrencesPerMonth(x, scenario.StartsOn), x.Currency)) * 3m)
             warnings.Add(new SimulationWarning("low-emergency-fund"));
         var averageMonthlyIncome = scenario.Incomes.Sum(x => ToBase(scenario, _incomeSchedules.GrossAnnualAmount(x, scenario.StartsOn) / 12m, x.Currency));
-        if (scenario.Liabilities.Sum(x => ToBase(scenario, x.MonthlyPayment, x.Currency)) > averageMonthlyIncome * 0.4m)
+        if (scenario.Liabilities.Sum(x => PersonalDebtPayment(scenario, x)) > averageMonthlyIncome * 0.4m)
             warnings.Add(new SimulationWarning("high-debt-payments"));
         return warnings;
     }
@@ -593,16 +593,16 @@ public sealed class ProjectionEngine(ICurrencyService currencies, IIncomeSchedul
     private decimal WeightedReturn(IEnumerable<Asset> assets, FinancialScenario scenario)
     {
         var values = assets.ToArray();
-        var total = values.Sum(x => ToBase(scenario, x.CurrentValue, x.Currency));
-        return total == 0 ? 0m : values.Sum(x => ToBase(scenario, x.CurrentValue, x.Currency) * x.ExpectedAnnualReturn * (1m - Math.Clamp(x.CapitalGainsTaxRate, 0m, 1m))) / total;
+        var total = values.Sum(x => OwnedAssetValue(scenario, x));
+        return total == 0 ? 0m : values.Sum(x => OwnedAssetValue(scenario, x) * x.ExpectedAnnualReturn * (1m - Math.Clamp(x.CapitalGainsTaxRate, 0m, 1m))) / total;
     }
 
     /// <summary>Calculates a current-value-weighted volatility with a configurable fallback.</summary>
     private decimal WeightedVolatility(IEnumerable<Asset> assets, FinancialScenario scenario, decimal fallback)
     {
         var values = assets.ToArray();
-        var total = values.Sum(x => ToBase(scenario, x.CurrentValue, x.Currency));
-        return total == 0 ? 0m : values.Sum(x => ToBase(scenario, x.CurrentValue, x.Currency) * AssetVolatility(x, fallback)) / total;
+        var total = values.Sum(x => OwnedAssetValue(scenario, x));
+        return total == 0 ? 0m : values.Sum(x => OwnedAssetValue(scenario, x) * AssetVolatility(x, fallback)) / total;
     }
 
     /// <summary>Preserves zero volatility for cash while retaining the configured fallback for other unconfigured assets.</summary>
@@ -613,6 +613,18 @@ public sealed class ProjectionEngine(ICurrencyService currencies, IIncomeSchedul
 
     /// <summary>Converts an amount to the owning profile's display currency.</summary>
     private decimal ToBase(FinancialScenario scenario, decimal amount, string currency) => _currencies.Convert(amount, currency, scenario.Profile!.BaseCurrency);
+
+    /// <summary>Returns only the profile's economic share of an asset in the profile currency.</summary>
+    private decimal OwnedAssetValue(FinancialScenario scenario, Asset asset) =>
+        ToBase(scenario, asset.CurrentValue * Math.Clamp(asset.OwnershipRate, 0m, 1m), asset.Currency);
+
+    /// <summary>Returns only the outstanding debt for which the profile is personally responsible.</summary>
+    private decimal PersonalDebtValue(FinancialScenario scenario, Liability liability) =>
+        ToBase(scenario, liability.OutstandingBalance * Math.Clamp(liability.ResponsibilityRate, 0m, 1m), liability.Currency);
+
+    /// <summary>Returns the profile's personal share of the contractual monthly debt payment.</summary>
+    private decimal PersonalDebtPayment(FinancialScenario scenario, Liability liability) =>
+        ToBase(scenario, liability.MonthlyPayment * Math.Clamp(liability.ResponsibilityRate, 0m, 1m), liability.Currency);
 
     /// <summary>Returns whole calendar years elapsed between two dates, never negative.</summary>
     private static int YearsBetween(DateOnly start, DateOnly end) => Math.Max(0, end.Year - start.Year);

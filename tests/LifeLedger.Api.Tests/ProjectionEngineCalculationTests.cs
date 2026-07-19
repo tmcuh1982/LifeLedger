@@ -44,6 +44,29 @@ public sealed class ProjectionEngineCalculationTests : IClassFixture<LifeLedgerA
         Assert.Equal(20_400m, result.Timeline[1].NetWorth);
     }
 
+    /// <summary>Keeps asset ownership and personal debt responsibility independent in current net worth.</summary>
+    [Fact]
+    public void Partial_property_ownership_does_not_reduce_a_fully_personal_mortgage()
+    {
+        using var scope = _factory.Services.CreateScope();
+        var engine = scope.ServiceProvider.GetRequiredService<IProjectionEngine>();
+        var home = Asset("Shared home", 300_000m, 0m, AssetKind.RealEstate);
+        home.OwnershipRate = 0.5m;
+        var mortgage = new Liability
+        {
+            Name = "Personal mortgage", Kind = LiabilityKind.Mortgage, OutstandingBalance = 120_000m,
+            ResponsibilityRate = 1m, MonthlyPayment = 0m, Currency = "EUR"
+        };
+        var scenario = Scenario(assets: [home]);
+        scenario.Liabilities = [mortgage];
+
+        var result = engine.Simulate(scenario, new SimulationRequest(SimulationMode.Deterministic, Years: 1));
+
+        Assert.Equal(30_000m, result.Timeline[0].NetWorth);
+        Assert.Contains(result.Timeline[0].WealthComponents, component => component.Type == ProjectionWealthComponentType.Asset && component.Value == 150_000m);
+        Assert.Contains(result.Timeline[0].WealthComponents, component => component.Type == ProjectionWealthComponentType.Liability && component.Value == -120_000m);
+    }
+
     /// <summary>Projects each asset category independently and reconciles every component to total net worth.</summary>
     [Fact]
     public void Wealth_timeline_exposes_category_growth_cash_and_debt_components()

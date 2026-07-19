@@ -7,6 +7,8 @@ import { DateField } from './DateField'
 
 const currencies = ['EUR', 'USD', 'PLN', 'GBP', 'CHF', 'CAD', 'JPY']
 const tr = (locale: Locale, english: string, french: string) => locale === 'fr' ? french : english
+type Theme = 'dark' | 'light'
+type SettingsSection = 'profile' | 'appearance' | 'assets' | 'data' | 'maintenance'
 
 /** Returns the rounded planning horizon associated with a selectable reference. */
 function referenceAge(reference: 'neutral' | 'female' | 'male') { return reference === 'male' ? 79 : reference === 'female' ? 84 : 82 }
@@ -37,8 +39,9 @@ interface SettingsProps {
   profile?: Profile
   assetCategories: AssetCategory[]
   assetProfileDefinitions: AssetProfileDefinition[]
+  theme: Theme
   saving: boolean
-  onClose: () => void
+  onThemeChange: (theme: Theme) => void
   onSaveProfile: (profile: Profile) => Promise<void>
   onCreateAssetCategory: (name: string) => Promise<AssetCategory[]>
   onRenameAssetCategory: (currentName: string, name: string) => Promise<AssetCategory[]>
@@ -54,7 +57,9 @@ interface SettingsProps {
   onDeleteAllData: () => Promise<void>
 }
 
-export function Settings({ locale, profile, assetCategories, assetProfileDefinitions, saving, onClose, onSaveProfile, onCreateAssetCategory, onRenameAssetCategory, onDeleteAssetCategory, onCreateAssetProfileDefinition, onUpdateAssetProfileDefinition, onDeleteAssetProfileDefinition, onExport, onRestore, onRestoreDemo, onResetMarketHistory, onResetNetWorthHistory, onDeleteAllData }: SettingsProps) {
+export function Settings({ locale, profile, assetCategories, assetProfileDefinitions, theme, saving, onThemeChange, onSaveProfile, onCreateAssetCategory, onRenameAssetCategory, onDeleteAssetCategory, onCreateAssetProfileDefinition, onUpdateAssetProfileDefinition, onDeleteAssetProfileDefinition, onExport, onRestore, onRestoreDemo, onResetMarketHistory, onResetNetWorthHistory, onDeleteAllData }: SettingsProps) {
+  const [section, setSection] = useState<SettingsSection>('profile')
+  const [themeDraft, setThemeDraft] = useState<Theme>(theme)
   const [currency, setCurrency] = useState(profile?.baseCurrency ?? 'EUR')
   const [birthDate, setBirthDate] = useState(profile?.birthDate ?? '')
   const [sex, setSex] = useState<Profile['sex']>(profile?.sex ?? 'Neutral')
@@ -106,7 +111,7 @@ export function Settings({ locale, profile, assetCategories, assetProfileDefinit
 
     try {
       const document = JSON.parse(await file.text()) as LifeLedgerExport
-      if (document.schemaVersion < 1 || document.schemaVersion > 11) throw new Error(tr(locale, 'This file is not a compatible LifeLedger backup.', 'Ce fichier n’est pas une sauvegarde LifeLedger compatible.'))
+      if (document.schemaVersion < 1 || document.schemaVersion > 12) throw new Error(tr(locale, 'This file is not a compatible LifeLedger backup.', 'Ce fichier n’est pas une sauvegarde LifeLedger compatible.'))
       if (!window.confirm(tr(locale, 'Restore this backup and replace the current data?', 'Restaurer cette sauvegarde et remplacer les données actuelles ?'))) return
       setRestoring(true)
       await onRestore(document)
@@ -189,18 +194,20 @@ export function Settings({ locale, profile, assetCategories, assetProfileDefinit
   }
 
   return (
-    <div className="fixed inset-0 z-30 overflow-y-auto bg-inkDeep/70 p-4 backdrop-blur-sm">
-      <section aria-modal="true" aria-label={tr(locale, 'Settings', 'Paramètres')} className="modal-surface mx-auto my-6 w-full max-w-3xl rounded-3xl p-6" role="dialog">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <p className="eyebrow">{tr(locale, 'Settings', 'Paramètres')}</p>
-            <h2 className="mt-2 text-xl font-semibold text-white">{tr(locale, 'Your private LifeLedger', 'Votre LifeLedger privé')}</h2>
-          </div>
-          <button aria-label={tr(locale, 'Close settings', 'Fermer les paramètres')} className="text-muted transition hover:text-white" type="button" onClick={onClose}>✕</button>
-        </div>
-
-        <div className="mt-6 space-y-4">
-          {profile && <article className="rounded-2xl border border-white/10 bg-white/5 p-4">
+    <section className="space-y-6" aria-label={tr(locale, 'Settings', 'Paramètres')}>
+      <header><p className="eyebrow">{tr(locale, 'Settings', 'Paramètres')}</p><h1 className="mt-2 text-3xl font-semibold text-white">{tr(locale, 'Configure your LifeLedger', 'Configurer votre LifeLedger')}</h1><p className="mt-2 max-w-2xl text-sm leading-6 text-muted">{tr(locale, 'Settings are grouped by purpose. Each section saves independently, so changing the appearance never changes your financial profile.', 'Les paramètres sont regroupés par usage. Chaque section s’enregistre séparément : modifier l’apparence ne modifie jamais votre profil financier.')}</p></header>
+      <div className="grid gap-5 lg:grid-cols-[220px_minmax(0,1fr)]">
+        <nav className="section-card flex gap-2 overflow-x-auto p-3 lg:sticky lg:top-6 lg:block lg:h-fit lg:space-y-1" aria-label={tr(locale, 'Settings sections', 'Sections des paramètres')}>
+          {([
+            ['profile', '◎', tr(locale, 'Profile & simulation', 'Profil et simulation')],
+            ['appearance', '◐', tr(locale, 'Appearance', 'Apparence')],
+            ['assets', '◇', tr(locale, 'Assets configuration', 'Configuration des actifs')],
+            ['data', '⇩', tr(locale, 'Data & backups', 'Données et sauvegardes')],
+            ['maintenance', '⚠', tr(locale, 'Maintenance', 'Maintenance')],
+          ] as Array<[SettingsSection, string, string]>).map(([id, icon, label]) => <button className={`nav-item min-w-max ${section === id ? 'nav-item-active' : ''}`} key={id} type="button" onClick={() => { setMessage(undefined); setSection(id) }}><span>{icon}</span><span>{label}</span></button>)}
+        </nav>
+        <div className="min-w-0 space-y-4">
+          {section === 'profile' && profile && <article className="section-card">
             <label className="block text-sm text-mist">
               {tr(locale, 'Default currency', 'Devise par défaut')}
               <select className="field mt-2" value={currency} onChange={(event) => { setProfileSaveError(undefined); setCurrency(event.target.value) }}>
@@ -249,7 +256,17 @@ export function Settings({ locale, profile, assetCategories, assetProfileDefinit
             <button className="ghost-button mt-4" disabled={saving || !canSaveProfile || !birthDate} onClick={() => void saveProfile()}>{saving ? tr(locale, 'Saving…', 'Enregistrement…') : tr(locale, 'Save settings', 'Enregistrer les paramètres')}</button>
           </article>}
 
-          <article className="rounded-2xl border border-white/10 bg-white/5 p-4">
+          {section === 'appearance' && <article className="section-card">
+            <p className="text-sm font-semibold text-white">{tr(locale, 'Visual theme', 'Thème visuel')}</p>
+            <p className="mt-1 text-xs leading-5 text-muted">{tr(locale, 'Choose the most comfortable contrast. This preference stays only in this browser and does not enter your financial backup.', 'Choisissez le contraste le plus confortable. Cette préférence reste uniquement dans ce navigateur et ne fait pas partie de votre sauvegarde financière.')}</p>
+            <div className="mt-5 grid gap-3 sm:grid-cols-2">
+              <button aria-pressed={themeDraft === 'dark'} className={`rounded-2xl border p-4 text-left transition ${themeDraft === 'dark' ? 'border-sky/60 bg-sky/10 ring-1 ring-sky/20' : 'border-white/15 bg-white/5 hover:bg-white/10'}`} type="button" onClick={() => setThemeDraft('dark')}><span className="block text-lg">◐</span><span className="mt-3 block font-medium text-mist">{tr(locale, 'Dark theme', 'Thème sombre')}</span><span className="mt-1 block text-xs leading-5 text-muted">{tr(locale, 'Deep blue surfaces for reduced glare.', 'Surfaces bleu profond pour limiter l’éblouissement.')}</span></button>
+              <button aria-pressed={themeDraft === 'light'} className={`rounded-2xl border p-4 text-left transition ${themeDraft === 'light' ? 'border-sky/60 bg-sky/10 ring-1 ring-sky/20' : 'border-white/15 bg-white/5 hover:bg-white/10'}`} type="button" onClick={() => setThemeDraft('light')}><span className="block text-lg">◑</span><span className="mt-3 block font-medium text-mist">{tr(locale, 'Light theme', 'Thème clair')}</span><span className="mt-1 block text-xs leading-5 text-muted">{tr(locale, 'Bright opaque glass with dark readable text.', 'Verre clair et opaque avec un texte sombre lisible.')}</span></button>
+            </div>
+            <button className="primary-button mt-5" disabled={themeDraft === theme} type="button" onClick={() => { onThemeChange(themeDraft); setMessage(tr(locale, 'Appearance saved.', 'Apparence enregistrée.')) }}>{tr(locale, 'Save appearance', 'Enregistrer l’apparence')}</button>
+          </article>}
+
+          {section === 'assets' && <article className="section-card">
             <p className="text-sm font-medium text-mist">{tr(locale, 'Asset categories', 'Catégories d’actifs')}</p>
             <p className="mt-1 text-xs leading-5 text-muted">{tr(locale, 'Built-in categories are translated automatically. Add personal categories for classifications that match your life.', 'Les catégories intégrées sont traduites automatiquement. Ajoutez vos propres catégories pour adapter le classement à votre patrimoine.')}</p>
             <div className="mt-3 flex flex-wrap gap-2">{builtInAssetKinds.map((kind) => <span className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs text-mist" key={kind}>{assetKindLabel(locale, kind)}</span>)}</div>
@@ -261,11 +278,11 @@ export function Settings({ locale, profile, assetCategories, assetProfileDefinit
               <input aria-label={tr(locale, 'New asset category', 'Nouvelle catégorie d’actifs')} className="field" maxLength={80} placeholder={tr(locale, 'For example: Vehicles', 'Par exemple : Véhicules')} value={newCategory} onChange={(event) => setNewCategory(event.target.value)} />
               <button className="ghost-button shrink-0" disabled={categoryBusy || !newCategory.trim()} onClick={() => void addAssetCategory()}>{tr(locale, 'Add category', 'Ajouter')}</button>
             </div>
-          </article>
+          </article>}
 
-          <AssetProfileBuilder definitions={assetProfileDefinitions} locale={locale} onCreate={onCreateAssetProfileDefinition} onUpdate={onUpdateAssetProfileDefinition} onDelete={onDeleteAssetProfileDefinition} />
+          {section === 'assets' && <AssetProfileBuilder definitions={assetProfileDefinitions} locale={locale} onCreate={onCreateAssetProfileDefinition} onUpdate={onUpdateAssetProfileDefinition} onDelete={onDeleteAssetProfileDefinition} />}
 
-          <article className="rounded-2xl border border-sky/20 bg-sky/10 p-4">
+          {section === 'data' && <article className="rounded-2xl border border-sky/20 bg-sky/10 p-4">
             <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-start">
               <div>
                 <p className="text-sm font-semibold text-sky">{tr(locale, 'Demo mode', 'Mode démonstration')}</p>
@@ -277,27 +294,27 @@ export function Settings({ locale, profile, assetCategories, assetProfileDefinit
             <button className="ghost-button mt-4 border-sky/20 bg-white/10" disabled={restoringDemo} onClick={() => void restoreDemo()}>
               {restoringDemo ? tr(locale, 'Restoring demo…', 'Restauration de la démo…') : tr(locale, 'Restore demo data', 'Restaurer les données de démo')}
             </button>
-          </article>
+          </article>}
 
-          {profile && <article className="rounded-2xl border border-white/10 bg-white/5 p-4">
+          {section === 'data' && profile && <article className="section-card">
             <p className="text-sm font-medium text-mist">{tr(locale, 'Export my wealth', 'Exporter mon patrimoine')}</p>
             <p className="mt-1 text-xs leading-5 text-muted">{tr(locale, 'Download all of your financial data as a private JSON file.', 'Télécharge toutes vos données financières dans un fichier JSON privé.')}</p>
             <button className="ghost-button mt-3" onClick={() => void onExport('lifeledger-patrimoine.json')}>{tr(locale, 'Export my data', 'Exporter mes données')}</button>
           </article>}
 
-          {profile && <article className="rounded-2xl border border-white/10 bg-white/5 p-4">
+          {section === 'maintenance' && profile && <article className="section-card">
             <p className="text-sm font-medium text-mist">{tr(locale, 'Market-price chart', 'Graphique des cours')}</p>
             <p className="mt-1 text-xs leading-5 text-muted">{tr(locale, 'Quotes are stored only on your server. Resetting removes the chart points, not your assets.', 'Les cours restent sur votre serveur. La remise à zéro supprime les points du graphique, pas vos actifs.')}</p>
             <button className="ghost-button mt-3" onClick={() => void resetHistory()}>{tr(locale, 'Reset chart points', 'Réinitialiser les points')}</button>
           </article>}
 
-          {profile && <article className="rounded-2xl border border-white/10 bg-white/5 p-4">
+          {section === 'maintenance' && profile && <article className="section-card">
             <p className="text-sm font-medium text-mist">{tr(locale, 'Net-worth history', 'Historique du patrimoine')}</p>
             <p className="mt-1 text-xs leading-5 text-muted">{tr(locale, 'A point is saved locally each time LifeLedger starts for your reference scenario. Resetting removes only the history, not your financial entries.', 'Un point est enregistré localement à chaque démarrage de LifeLedger pour votre scénario de référence. La remise à zéro supprime uniquement l’historique, pas vos données financières.')}</p>
             <button className="ghost-button mt-3" onClick={() => void resetNetWorthHistory()}>{tr(locale, 'Reset net-worth history', 'Réinitialiser l’historique')}</button>
           </article>}
 
-          <article className="rounded-2xl border border-white/10 bg-white/5 p-4">
+          {section === 'data' && <article className="section-card">
             <p className="text-sm font-medium text-mist">{tr(locale, 'Backup', 'Sauvegarde')}</p>
             <p className="mt-1 text-xs leading-5 text-muted">{tr(locale, 'Keep a dated copy before changing your plan. Restoration replaces current data.', 'Conservez une copie datée avant un changement. La restauration remplace les données actuelles.')}</p>
             <div className="mt-3 flex flex-wrap items-center gap-3">
@@ -308,9 +325,9 @@ export function Settings({ locale, profile, assetCategories, assetProfileDefinit
               </label>
             </div>
             {!profile && <p className="mt-3 text-xs leading-5 text-muted">{tr(locale, 'Your ledger is empty. Restore a backup to continue.', 'Votre registre est vide. Restaurez une sauvegarde pour continuer.')}</p>}
-          </article>
+          </article>}
 
-          {profile && <article className="rounded-2xl border border-danger/40 bg-danger/10 p-4">
+          {section === 'maintenance' && profile && <article className="rounded-2xl border border-danger/40 bg-danger/10 p-5">
             <p className="text-sm font-semibold text-danger">{tr(locale, 'Danger zone', 'Zone de danger')}</p>
             <p className="mt-1 text-sm font-medium text-mist">{tr(locale, 'Delete all data', 'Supprimer toutes les données')}</p>
             <p className="mt-1 text-xs leading-5 text-muted">{tr(locale, 'Permanently removes your local financial plan and the demo data. You will have to confirm twice.', 'Supprime définitivement votre plan financier local et les données de démonstration. Deux confirmations seront demandées.')}</p>
@@ -321,8 +338,8 @@ export function Settings({ locale, profile, assetCategories, assetProfileDefinit
 
           {message && <p className="text-xs text-sky">{message}</p>}
         </div>
-      </section>
-    </div>
+      </div>
+    </section>
   )
 }
 

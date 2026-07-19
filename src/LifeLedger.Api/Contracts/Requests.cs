@@ -24,6 +24,21 @@ public sealed record AssetCategoryNameRequest(string Name);
 /// <summary>Allocates a fraction of one liability's current balance to an asset.</summary>
 public sealed record AssetLiabilityAllocationRequest(Guid LiabilityId, decimal AllocationRate);
 
+/// <summary>Allocates a fraction of one liability to an asset that it finances.</summary>
+public sealed record LiabilityAssetAllocationRequest(Guid AssetId, decimal AllocationRate);
+
+/// <summary>Supplies editable debt facts together with the assets financed by that debt.</summary>
+public sealed record LiabilityRequest(
+    string Name,
+    LiabilityKind Kind,
+    decimal OutstandingBalance,
+    decimal ResponsibilityRate,
+    decimal InterestRate,
+    decimal MonthlyPayment,
+    DateOnly? PaidOffOn,
+    string Currency,
+    IReadOnlyList<LiabilityAssetAllocationRequest> AssetAllocations);
+
 /// <summary>Supplies the complete financial and characteristic dossier of an asset in one transaction.</summary>
 public sealed record AssetDossierRequest(
     string Name,
@@ -47,7 +62,8 @@ public sealed record AssetDossierRequest(
     int? ProfileDefinitionVersion,
     IReadOnlyDictionary<string, JsonElement>? ProfileValues,
     IReadOnlyList<AssetLiabilityAllocationRequest> LiabilityAllocations,
-    bool IsIncludedInPortfolioAllocation = true);
+    bool IsIncludedInPortfolioAllocation = true,
+    decimal OwnershipRate = 1m);
 
 /// <summary>Supplies the translated name and fields of a user-defined asset characteristic profile.</summary>
 public sealed record AssetProfileDefinitionRequest(

@@ -4,7 +4,7 @@ import type { AllocationSlice, AssetValuation, NetWorthSnapshot, ProjectionWealt
 /** Chooses whether projection charts are read against calendar years or the person's age. */
 export type TimelineScale = 'year' | 'age'
 
-const palette = ['#adc9eb', '#b9f6c8', '#ffddb0', '#d5b7ff', '#ffb4ab', '#ffffff']
+const palette = ['#6f9dcc', '#52a675', '#d99942', '#9673c9', '#d36b62', '#65758b']
 
 const componentCopy: Record<string, Record<string, string>> = {
   Cash: { en: 'Cash', fr: 'Liquidités', pl: 'Gotówka', de: 'Liquidität', nl: 'Cash' },
@@ -72,14 +72,14 @@ export function NetWorthChart({ timeline, currency, locale = 'en', scale = 'year
           <YAxis tickFormatter={(value) => compact(value, currency, locale)} tickLine={false} axisLine={false} tick={{ fill: '#c4c7c8', fontSize: 11 }} width={70} />
           <Tooltip content={<ChartTooltip currency={currency} locale={locale} scale={scale} />} />
           {components.map((component, index) => <Area key={component.key} type="monotone" dataKey={`wealthComponent${index}`} name={componentLabel(component, locale)} stackId="wealth" stroke={palette[index % palette.length]} strokeWidth={1.25} fill={palette[index % palette.length]} fillOpacity={0.24} />)}
-          <Line type="monotone" dataKey="netWorth" name={totalLabel} stroke="#ffffff" strokeWidth={3} dot={false} />
-          <Line type="monotone" dataKey="inflationAdjustedNetWorth" name={realValueLabel} stroke="#c4c7c8" strokeWidth={1.5} strokeDasharray="5 5" dot={false} />
+          <Line type="monotone" dataKey="netWorth" name={totalLabel} stroke="rgb(var(--color-mist))" strokeWidth={3} dot={false} />
+          <Line type="monotone" dataKey="inflationAdjustedNetWorth" name={realValueLabel} stroke="rgb(var(--color-muted))" strokeWidth={1.5} strokeDasharray="5 5" dot={false} />
           </ComposedChart>
         </ResponsiveContainer>
       </div>
       <ul className="mt-4 flex flex-wrap gap-x-4 gap-y-2 border-t border-white/10 pt-4">
         {components.map((component, index) => <li className="flex items-center gap-2 text-xs text-muted" key={component.key}><i className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: palette[index % palette.length] }} />{componentLabel(component, locale)}</li>)}
-        <li className="flex items-center gap-2 text-xs font-medium text-mist"><i className="h-0.5 w-4 bg-white" />{totalLabel}</li>
+        <li className="flex items-center gap-2 text-xs font-medium text-mist"><i className="h-0.5 w-4 bg-mist" />{totalLabel}</li>
       </ul>
       {projectedSales.length > 0 && <section className="mt-4 border-t border-white/10 pt-4"><p className="text-xs font-semibold uppercase tracking-[0.08em] text-muted">{saleLabels.title}</p><div className="mt-3 space-y-2">{projectedSales.map((sale) => <details className="rounded-xl border border-white/10 bg-white/5 px-4 py-3" key={sale.saleId}><summary className="cursor-pointer text-sm font-medium text-mist">{new Intl.DateTimeFormat(locale, { year: 'numeric', month: 'long' }).format(new Date(`${sale.happensOn}T00:00:00`))} · {sale.name} · {compact(sale.netProceeds, sale.currency, locale)}</summary><dl className="mt-3 grid gap-2 border-t border-white/10 pt-3 text-xs sm:grid-cols-2"><div className="flex justify-between gap-3"><dt className="text-muted">{saleLabels.gross}</dt><dd className="text-mist">{compact(sale.grossProceeds, sale.currency, locale)}</dd></div><div className="flex justify-between gap-3"><dt className="text-muted">{saleLabels.costs}</dt><dd className="text-mist">− {compact(sale.sellingCosts, sale.currency, locale)}</dd></div><div className="flex justify-between gap-3"><dt className="text-muted">{saleLabels.tax}</dt><dd className="text-mist">− {compact(sale.capitalGainsTax, sale.currency, locale)}</dd></div><div className="flex justify-between gap-3"><dt className="text-muted">{saleLabels.debt}</dt><dd className="text-mist">− {compact(sale.debtRepaid, sale.currency, locale)}</dd></div><div className="flex justify-between gap-3 border-t border-white/10 pt-2 font-medium sm:col-span-2"><dt className="text-mist">{saleLabels.net}</dt><dd className="text-sky">{compact(sale.netProceeds, sale.currency, locale)}</dd></div></dl></details>)}</div></section>}
     </div>

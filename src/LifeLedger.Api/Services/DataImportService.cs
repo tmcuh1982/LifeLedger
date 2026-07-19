@@ -64,8 +64,8 @@ public sealed class DataImportService(LifeLedgerDbContext db) : IDataImportServi
     private static void Validate(LifeLedgerExport document)
     {
         var errors = new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase);
-        // Older versions remain importable; version 11 adds explicit planned asset sales.
-        if (document.SchemaVersion is < 1 or > 11) errors["document.schemaVersion"] = ["Unsupported export schema."];
+        // Older versions remain importable; version 12 adds explicit ownership and debt-responsibility shares.
+        if (document.SchemaVersion is < 1 or > 12) errors["document.schemaVersion"] = ["Unsupported export schema."];
         if (string.IsNullOrWhiteSpace(document.Profile.DisplayName)) errors["document.profile.displayName"] = ["A profile name is required."];
         if (!IsCurrencyCode(document.Profile.BaseCurrency)) errors["document.profile.baseCurrency"] = ["Use a three-letter ISO 4217 currency code."];
         if (document.Profile.ExpectedLifespan is < 50 or > 130) errors["document.profile.expectedLifespan"] = ["The final age must be between 50 and 130."];
@@ -97,6 +97,8 @@ public sealed class DataImportService(LifeLedgerDbContext db) : IDataImportServi
             {
                 errors[$"{prefix}.expenses.amountChanges"] = ["One or more recurring-expense amount changes are invalid."];
             }
+            if (scenario.Assets.Any(asset => asset.OwnershipRate is <= 0m or > 1m) || scenario.Liabilities.Any(liability => liability.ResponsibilityRate is <= 0m or > 1m))
+                errors[$"{prefix}.ownership"] = ["Every ownership and debt-responsibility share must be greater than 0% and at most 100%."];
             if (scenario.AllocationStrategies.Any(strategy => string.IsNullOrWhiteSpace(strategy.Name) || strategy.EffectiveTo is { } end && end < strategy.EffectiveFrom || strategy.Targets.Count == 0 || strategy.Targets.Sum(target => target.TargetPercentage) > 100m || strategy.Targets.Any(target => string.IsNullOrWhiteSpace(target.Category) || target.TargetPercentage is < 0m or > 100m || target.TolerancePercentage is < 0m or > 100m)))
                 errors[$"{prefix}.allocationStrategies"] = ["One or more allocation strategies are invalid."];
             if (scenario.AssetSales.Any(sale => string.IsNullOrWhiteSpace(sale.Name) || sale.HappensOn < scenario.StartsOn || sale.SellingCosts < 0m || sale.CapitalGainsTaxRate is < 0m or > 1m ||

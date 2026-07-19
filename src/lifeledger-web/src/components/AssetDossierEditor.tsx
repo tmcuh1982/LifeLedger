@@ -17,6 +17,8 @@ interface AssetDossierEditorProps {
 const labels = {
   acquisition: { en: 'Purchase and current estimate', fr: 'Achat et estimation actuelle', pl: 'Zakup i bieżąca wycena', de: 'Kauf und aktuelle Schätzung', nl: 'Aankoop en huidige schatting' },
   purchasePrice: { en: 'Purchase price', fr: 'Prix d’achat', pl: 'Cena zakupu', de: 'Kaufpreis', nl: 'Aankoopprijs' },
+  ownership: { en: 'Share of the asset you own (%)', fr: 'Part du bien qui vous appartient (%)', pl: 'Twoja część aktywa (%)', de: 'Ihr Eigentumsanteil (%)', nl: 'Uw eigendomsaandeel (%)' },
+  ownershipHelp: { en: 'The values entered are for the whole asset. LifeLedger counts only your share in your wealth.', fr: 'Les valeurs saisies concernent le bien complet. LifeLedger compte uniquement votre part dans votre patrimoine.', pl: 'Wartości dotyczą całego aktywa. LifeLedger uwzględnia tylko Twoją część.', de: 'Die Werte gelten für den gesamten Vermögenswert. LifeLedger berücksichtigt nur Ihren Anteil.', nl: 'De waarden gelden voor het volledige bezit. LifeLedger telt alleen uw aandeel.' },
   costs: { en: 'Purchase costs and taxes', fr: 'Frais et taxes d’achat', pl: 'Koszty i podatki zakupu', de: 'Kaufnebenkosten und Steuern', nl: 'Aankoopkosten en belastingen' },
   purchasedOn: { en: 'Purchase date', fr: 'Date d’achat', pl: 'Data zakupu', de: 'Kaufdatum', nl: 'Aankoopdatum' },
   valuedOn: { en: 'Estimate date', fr: 'Date de l’estimation', pl: 'Data wyceny', de: 'Bewertungsdatum', nl: 'Taxatiedatum' },
@@ -27,7 +29,7 @@ const labels = {
   noSheet: { en: 'No detailed sheet', fr: 'Aucune fiche détaillée', pl: 'Brak karty szczegółowej', de: 'Kein Detailblatt', nl: 'Geen detailfiche' },
   debts: { en: 'Debts linked to this asset', fr: 'Dettes liées à cet actif', pl: 'Długi powiązane z tym aktywem', de: 'Mit diesem Vermögenswert verbundene Schulden', nl: 'Schulden gekoppeld aan dit bezit' },
   debtHelp: { en: 'Enter the share of each debt that finances this asset. Leave empty if it is unrelated.', fr: 'Indiquez la part de chaque dette qui finance cet actif. Laissez vide si elle n’est pas liée.', pl: 'Podaj część każdego długu finansującą ten składnik. Pozostaw puste, jeśli nie dotyczy.', de: 'Geben Sie den Anteil jeder Schuld an, der diesen Vermögenswert finanziert.', nl: 'Vul het aandeel van elke schuld in dat dit bezit financiert.' },
-  linkedShare: { en: 'Linked share (%)', fr: 'Part liée (%)', pl: 'Powiązany udział (%)', de: 'Verknüpfter Anteil (%)', nl: 'Gekoppeld aandeel (%)' },
+  linkedShare: { en: 'Share of this debt financing the asset (%)', fr: 'Part de ce crédit finançant ce bien (%)', pl: 'Część długu finansująca aktywo (%)', de: 'Anteil dieser Schuld zur Finanzierung (%)', nl: 'Deel van deze schuld voor dit bezit (%)' },
   performance: { en: 'Current result', fr: 'Résultat actuel', pl: 'Bieżący wynik', de: 'Aktuelles Ergebnis', nl: 'Huidig resultaat' },
   basis: { en: 'Total purchase cost', fr: 'Coût total d’achat', pl: 'Całkowity koszt zakupu', de: 'Gesamte Anschaffungskosten', nl: 'Totale aankoopkosten' },
   gain: { en: 'Gain or loss', fr: 'Gain ou perte', pl: 'Zysk lub strata', de: 'Gewinn oder Verlust', nl: 'Winst of verlies' },
@@ -52,11 +54,14 @@ function convert(value: number, from: string, to: string, rates: CurrencyRate[])
 export function AssetDossierEditor({ draft, definitions, liabilities, rates, locale, onField }: AssetDossierEditorProps) {
   const currency = String(draft.currency || 'EUR')
   const definition = definitions.find((candidate) => candidate.key === draft.profileDefinitionKey)
-  const basis = number(draft.purchasePrice) + number(draft.acquisitionCosts)
-  const gain = number(draft.currentValue) - basis
+  const ownershipRate = number(draft.ownershipRate) / 100
+  const basis = (number(draft.purchasePrice) + number(draft.acquisitionCosts)) * ownershipRate
+  const ownedValue = number(draft.currentValue) * ownershipRate
+  const gain = ownedValue - basis
   const linkedAmounts = liabilities.map((liability) => {
     const allocation = number(draft[`liability:${liability.id}`]) / 100
-    return allocation > 0 ? convert(Number(liability.outstandingBalance || 0) * allocation, String(liability.currency || currency), currency, rates) : 0
+    const responsibilityRate = Number(liability.responsibilityRate ?? 1)
+    return allocation > 0 ? convert(Number(liability.outstandingBalance || 0) * responsibilityRate * allocation, String(liability.currency || currency), currency, rates) : 0
   })
   const hasUnknownConversion = linkedAmounts.some((amount) => amount === undefined)
   const linkedDebt = linkedAmounts.reduce<number>((sum, amount) => sum + (amount ?? 0), 0)
@@ -67,9 +72,11 @@ export function AssetDossierEditor({ draft, definitions, liabilities, rates, loc
       <div className="mt-4 grid gap-4 sm:grid-cols-2">
         <Field label={`${t(locale, 'purchasePrice')} (${currency})`} name="purchasePrice" type="number" value={draft.purchasePrice} onField={onField} />
         <Field label={`${t(locale, 'costs')} (${currency})`} name="acquisitionCosts" type="number" value={draft.acquisitionCosts} onField={onField} />
+        <Field label={t(locale, 'ownership')} name="ownershipRate" type="number" value={draft.ownershipRate} onField={onField} />
         <DateField label={t(locale, 'purchasedOn')} locale={locale} value={String(draft.purchasedOn ?? '')} onChange={(value) => onField('purchasedOn', value)} />
         <DateField label={t(locale, 'valuedOn')} locale={locale} value={String(draft.valuedOn ?? '')} onChange={(value) => onField('valuedOn', value)} />
       </div>
+      <p className="mt-3 rounded-xl border border-sky/20 bg-sky/10 px-3 py-2 text-xs leading-5 text-sky">{t(locale, 'ownershipHelp')}</p>
       <label className="mt-4 block text-sm text-mist">{t(locale, 'source')}<input className="field mt-2" value={String(draft.valuationSource || '')} placeholder={t(locale, 'sourcePlaceholder')} onChange={(event) => onField('valuationSource', event.target.value)} /></label>
     </section>
 
@@ -91,14 +98,14 @@ export function AssetDossierEditor({ draft, definitions, liabilities, rates, loc
         <Metric label={t(locale, 'basis')} value={money(basis, currency, locale)} />
         <Metric label={t(locale, 'gain')} value={`${money(gain, currency, locale)}${basis > 0 ? ` · ${(gain / basis * 100).toFixed(1)}%` : ''}`} tone={gain >= 0 ? 'text-success' : 'text-warning'} />
         <Metric label={t(locale, 'linkedDebt')} value={hasUnknownConversion ? '—' : money(linkedDebt, currency, locale)} />
-        <Metric label={t(locale, 'equity')} value={hasUnknownConversion ? '—' : money(number(draft.currentValue) - linkedDebt, currency, locale)} />
+        <Metric label={t(locale, 'equity')} value={hasUnknownConversion ? '—' : money(ownedValue - linkedDebt, currency, locale)} />
       </dl>
     </section>
   </div>
 }
 
 function Field({ label, name, type, value, onField }: { label: string; name: string; type: string; value?: string | boolean; onField: (name: string, value: string | boolean) => void }) {
-  return <label className="block text-sm text-mist">{label}<input className="field mt-2" min={type === 'number' ? 0 : undefined} step={type === 'number' ? 'any' : undefined} type={type} value={String(value ?? '')} onChange={(event) => onField(name, event.target.value)} /></label>
+  return <label className="block text-sm text-mist">{label}<input className="field mt-2" max={name === 'ownershipRate' ? 100 : undefined} min={type === 'number' ? 0 : undefined} step={type === 'number' ? 'any' : undefined} type={type} value={String(value ?? '')} onChange={(event) => onField(name, event.target.value)} /></label>
 }
 
 function DynamicField({ field, locale, value, onField }: { field: AssetProfileFieldDefinition; locale: Locale; value?: string | boolean; onField: (name: string, value: string | boolean) => void }) {
