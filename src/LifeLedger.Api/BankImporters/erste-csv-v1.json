@@ -1,0 +1,21 @@
+{
+  "key": "erste-csv-v1",
+  "bankName": "Erste Bank",
+  "format": "Delimited",
+  "version": 1,
+  "acceptedExtensions": [".csv"],
+  "delimiter": ";",
+  "metadataRow": 0,
+  "accountIdentifierColumn": 2,
+  "accountCurrencyColumn": 4,
+  "firstTransactionRow": 1,
+  "bookingDateColumn": 0,
+  "valueDateColumn": 1,
+  "descriptionColumn": 2,
+  "counterpartyColumn": 3,
+  "amountColumn": 5,
+  "balanceColumn": 6,
+  "referenceColumn": 7,
+  "dateFormat": "dd-MM-yyyy",
+  "decimalCulture": "pl-PL"
+}

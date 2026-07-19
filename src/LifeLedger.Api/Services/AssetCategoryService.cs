@@ -69,6 +69,8 @@ public sealed class AssetCategoryService(LifeLedgerDbContext db) : IAssetCategor
             .Where(asset => string.Equals(asset.CustomCategory, storedName, StringComparison.OrdinalIgnoreCase))
             .ToArray();
         foreach (var asset in assignedAssets) asset.CustomCategory = newName;
+        var strategyTargets = (await db.AllocationStrategyTargets.Where(target => target.Category == storedName).ToListAsync(cancellationToken));
+        foreach (var target in strategyTargets) target.Category = newName;
         names.Remove(storedName);
         names.Add(newName);
         await SaveNamesAsync(names, cancellationToken);
@@ -83,7 +85,8 @@ public sealed class AssetCategoryService(LifeLedgerDbContext db) : IAssetCategor
         var storedName = names.FirstOrDefault(category => string.Equals(category, name, StringComparison.OrdinalIgnoreCase))
             ?? throw new KeyNotFoundException($"The category '{name}' does not exist.");
         var isUsed = (await db.Assets.AsNoTracking().Where(asset => asset.CustomCategory != null).Select(asset => asset.CustomCategory!).ToListAsync(cancellationToken))
-            .Any(category => string.Equals(category, storedName, StringComparison.OrdinalIgnoreCase));
+            .Any(category => string.Equals(category, storedName, StringComparison.OrdinalIgnoreCase))
+            || await db.AllocationStrategyTargets.AsNoTracking().AnyAsync(target => target.Category == storedName, cancellationToken);
         if (isUsed) throw new AssetCategoryInUseException(storedName);
         names.Remove(storedName);
         await SaveNamesAsync(names, cancellationToken);

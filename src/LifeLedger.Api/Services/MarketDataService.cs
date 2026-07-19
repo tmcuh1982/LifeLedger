@@ -17,7 +17,7 @@ public interface IMarketDataService
 }
 
 /// <summary>Optional, best-effort market quotes. Only public tickers leave the local server.</summary>
-public sealed class MarketDataService(LifeLedgerDbContext db, IHttpClientFactory httpClientFactory, ILogger<MarketDataService> logger) : IMarketDataService
+public sealed class MarketDataService(LifeLedgerDbContext db, IHttpClientFactory httpClientFactory, IAssetValuationHistoryService valuations, ILogger<MarketDataService> logger) : IMarketDataService
 {
     /// <summary>Public chart endpoint used solely with a user-entered ticker.</summary>
     private const string YahooChartUrl = "https://query1.finance.yahoo.com/v8/finance/chart/";
@@ -52,6 +52,7 @@ public sealed class MarketDataService(LifeLedgerDbContext db, IHttpClientFactory
                 // The quantity entered by the user remains authoritative; only its current value is refreshed.
                 asset.CurrentValue = Math.Round(asset.Quantity * price, 4);
                 db.AssetQuoteSnapshots.Add(new AssetQuoteSnapshot { AssetId = asset.Id, Price = price, Currency = currency });
+                await valuations.RecordAsync(asset, DateOnly.FromDateTime(DateTime.UtcNow), "Yahoo Finance", cancellationToken);
                 results.Add(new MarketRefreshResult(asset.Id, ticker, true, price, currency, null));
             }
             catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException or JsonException or KeyNotFoundException or InvalidOperationException)

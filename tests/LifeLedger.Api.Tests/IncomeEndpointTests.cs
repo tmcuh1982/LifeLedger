@@ -33,6 +33,98 @@ public sealed class IncomeEndpointTests : IClassFixture<LifeLedgerApiFactory>
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
+    /// <summary>Persists a seasonal rental and a monthly charge linked to the same property.</summary>
+    [Fact]
+    public async Task Seasonal_rental_can_be_linked_to_its_apartment()
+    {
+        var scenarioId = Guid.NewGuid();
+        var assetId = Guid.NewGuid();
+        await using (var scope = _factory.Services.CreateAsyncScope())
+        {
+            var database = scope.ServiceProvider.GetRequiredService<LifeLedgerDbContext>();
+            var profile = new Profile { DisplayName = "Seasonal rental profile" };
+            database.Scenarios.Add(new FinancialScenario
+            {
+                Id = scenarioId,
+                Profile = profile,
+                Name = "Reference",
+                Assumptions = new SimulationAssumptions(),
+                Assets = [new Asset { Id = assetId, Name = "Seaside apartment", Kind = AssetKind.RealEstate, CurrentValue = 200_000m }]
+            });
+            await database.SaveChangesAsync();
+        }
+
+        using var client = _factory.CreateClient();
+        using var response = await client.PostAsJsonAsync($"/api/scenarios/{scenarioId}/incomes", new
+        {
+            name = "Seasonal rent", kind = "Rental", amountMode = "Seasonal", monthlyAmount = 1_000m, annualAmount = 12_000m,
+            linkedAssetId = assetId, annualGrowthRate = 0m, startsOn = "2026-01-01", isTaxable = true, taxRate = 0.19m,
+            currency = "EUR", monthlyAllocations = new[] { new { month = 7, share = 0.7m }, new { month = 8, share = 0.3m } }
+        });
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        using var expenseResponse = await client.PostAsJsonAsync($"/api/scenarios/{scenarioId}/expenses", new
+        {
+            name = "Apartment charges", kind = "Recurring", frequency = "Monthly", monthlyAmount = 250m,
+            linkedAssetId = assetId, indexedToInflation = true, startsOn = "2026-01-01", currency = "EUR"
+        });
+        Assert.Equal(HttpStatusCode.Created, expenseResponse.StatusCode);
+
+        await using var verificationScope = _factory.Services.CreateAsyncScope();
+        var verificationDatabase = verificationScope.ServiceProvider.GetRequiredService<LifeLedgerDbContext>();
+        var income = await verificationDatabase.Incomes.Include(item => item.MonthlyAllocations).SingleAsync(item => item.ScenarioId == scenarioId);
+        Assert.Equal(assetId, income.LinkedAssetId);
+        Assert.Equal(IncomeAmountMode.Seasonal, income.AmountMode);
+        Assert.Equal(2, income.MonthlyAllocations.Count);
+        var expense = await verificationDatabase.Expenses.SingleAsync(item => item.ScenarioId == scenarioId);
+        Assert.Equal(assetId, expense.LinkedAssetId);
+        Assert.Equal(250m, expense.MonthlyAmount);
+    }
+
+    /// <summary>Persists a car purchase as a currency-aware expense repeated every five years.</summary>
+    [Fact]
+    public async Task Vehicle_purchase_can_repeat_every_five_years()
+    {
+        var scenarioId = Guid.NewGuid();
+        await using (var scope = _factory.Services.CreateAsyncScope())
+        {
+            var database = scope.ServiceProvider.GetRequiredService<LifeLedgerDbContext>();
+            database.Scenarios.Add(new FinancialScenario
+            {
+                Id = scenarioId,
+                Name = "Vehicle planning",
+                Profile = new Profile { DisplayName = "Vehicle planning profile", BaseCurrency = "EUR" },
+                Assumptions = new SimulationAssumptions()
+            });
+            await database.SaveChangesAsync();
+        }
+
+        using var client = _factory.CreateClient();
+        using var response = await client.PostAsJsonAsync($"/api/scenarios/{scenarioId}/events", new
+        {
+            name = "Replace the family car",
+            kind = "VehiclePurchase",
+            happensOn = "2028-06-15",
+            recurrenceFrequency = "EveryFiveYears",
+            recurrenceEndsOn = "2048-06-15",
+            oneOffCashImpact = -120_000m,
+            monthlyCashImpact = 0m,
+            durationMonths = 0,
+            currency = "PLN",
+            notes = "Planning assumption"
+        });
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+
+        await using var verificationScope = _factory.Services.CreateAsyncScope();
+        var verificationDatabase = verificationScope.ServiceProvider.GetRequiredService<LifeLedgerDbContext>();
+        var saved = await verificationDatabase.Events.SingleAsync(item => item.ScenarioId == scenarioId);
+        Assert.Equal(EventKind.VehiclePurchase, saved.Kind);
+        Assert.Equal(RecurrenceFrequency.EveryFiveYears, saved.RecurrenceFrequency);
+        Assert.Equal(-120_000m, saved.OneOffCashImpact);
+        Assert.Equal("PLN", saved.Currency);
+    }
+
     /// <summary>Deletes every persisted financial record while leaving the API available for a future backup restore.</summary>
     [Fact]
     public async Task Deleting_all_data_removes_the_local_profile()

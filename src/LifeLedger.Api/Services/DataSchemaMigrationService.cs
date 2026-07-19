@@ -31,8 +31,8 @@ public sealed class DataSchemaMigrationService(
 {
     /// <summary>Key used in the local settings table for the business-data format version.</summary>
     public const string DataSchemaVersionKey = "data-schema-version";
-    /// <summary>Initial version assigned to data created before application-data versioning existed.</summary>
-    public const int LatestVersion = 1;
+    /// <summary>Latest business-data format understood by this application version.</summary>
+    public const int LatestVersion = 6;
 
     /// <inheritdoc />
     public int CurrentVersion => LatestVersion;

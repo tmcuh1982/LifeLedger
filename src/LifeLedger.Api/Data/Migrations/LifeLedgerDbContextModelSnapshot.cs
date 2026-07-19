@@ -35,10 +35,75 @@ namespace LifeLedger.Api.Data.Migrations
                     b.ToTable("ApplicationSettings");
                 });
 
+            modelBuilder.Entity("LifeLedger.Api.Domain.AllocationStrategy", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(1000)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateOnly>("EffectiveFrom")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateOnly?>("EffectiveTo")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("ScenarioId")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ScenarioId", "EffectiveFrom");
+
+                    b.ToTable("AllocationStrategies");
+                });
+
+            modelBuilder.Entity("LifeLedger.Api.Domain.AllocationStrategyTarget", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("AllocationStrategyId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Category")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("TEXT");
+
+                    b.Property<decimal>("TargetPercentage")
+                        .HasPrecision(18, 4)
+                        .HasColumnType("TEXT");
+
+                    b.Property<decimal>("TolerancePercentage")
+                        .HasPrecision(18, 4)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AllocationStrategyId", "Category")
+                        .IsUnique();
+
+                    b.ToTable("AllocationStrategyTargets");
+                });
+
             modelBuilder.Entity("LifeLedger.Api.Domain.Asset", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<decimal>("AcquisitionCosts")
+                        .HasPrecision(18, 4)
                         .HasColumnType("TEXT");
 
                     b.Property<string>("CapitalGainsTaxCountryCode")
@@ -64,6 +129,19 @@ namespace LifeLedger.Api.Data.Migrations
                         .HasPrecision(18, 4)
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("ExternalId")
+                        .HasMaxLength(160)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ExternalProvider")
+                        .HasMaxLength(80)
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("IsIncludedInPortfolioAllocation")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER")
+                        .HasDefaultValue(true);
+
                     b.Property<bool>("IsLiquid")
                         .HasColumnType("INTEGER");
 
@@ -72,6 +150,13 @@ namespace LifeLedger.Api.Data.Migrations
 
                     b.Property<string>("Name")
                         .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<decimal>("PurchasePrice")
+                        .HasPrecision(18, 4)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateOnly?>("PurchasedOn")
                         .HasColumnType("TEXT");
 
                     b.Property<decimal>("Quantity")
@@ -84,15 +169,64 @@ namespace LifeLedger.Api.Data.Migrations
                     b.Property<string>("Ticker")
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("ValuationSource")
+                        .HasMaxLength(160)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateOnly?>("ValuedOn")
+                        .HasColumnType("TEXT");
+
                     b.Property<decimal>("Volatility")
                         .HasPrecision(18, 4)
                         .HasColumnType("TEXT");
 
                     b.HasKey("Id");
 
-                    b.HasIndex("ScenarioId");
+                    b.HasIndex("ScenarioId", "ExternalProvider", "ExternalId")
+                        .IsUnique();
 
                     b.ToTable("Assets");
+                });
+
+            modelBuilder.Entity("LifeLedger.Api.Domain.AssetCharacteristicProfile", b =>
+                {
+                    b.Property<Guid>("AssetId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("DefinitionKey")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("DefinitionVersion")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("ValuesJson")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("AssetId");
+
+                    b.ToTable("AssetCharacteristicProfiles");
+                });
+
+            modelBuilder.Entity("LifeLedger.Api.Domain.AssetLiabilityLink", b =>
+                {
+                    b.Property<Guid>("AssetId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("LiabilityId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<decimal>("AllocationRate")
+                        .HasPrecision(18, 4)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("AssetId", "LiabilityId");
+
+                    b.HasIndex("LiabilityId");
+
+                    b.ToTable("AssetLiabilityLinks");
                 });
 
             modelBuilder.Entity("LifeLedger.Api.Domain.AssetQuoteSnapshot", b =>
@@ -124,6 +258,192 @@ namespace LifeLedger.Api.Data.Migrations
                     b.HasIndex("AssetId", "CapturedAt");
 
                     b.ToTable("AssetQuoteSnapshots");
+                });
+
+            modelBuilder.Entity("LifeLedger.Api.Domain.AssetValuationSnapshot", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("AssetId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Currency")
+                        .IsRequired()
+                        .HasMaxLength(3)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset>("RecordedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .HasMaxLength(160)
+                        .HasColumnType("TEXT");
+
+                    b.Property<decimal>("Value")
+                        .HasPrecision(18, 4)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateOnly>("ValuedOn")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AssetId", "ValuedOn")
+                        .IsUnique();
+
+                    b.ToTable("AssetValuationSnapshots");
+                });
+
+            modelBuilder.Entity("LifeLedger.Api.Domain.BankAccount", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("BankKey")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Currency")
+                        .IsRequired()
+                        .HasMaxLength(3)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("IdentifierHash")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("LinkedAssetId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("MaskedIdentifier")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("ScenarioId")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("LinkedAssetId");
+
+                    b.HasIndex("ScenarioId", "IdentifierHash")
+                        .IsUnique();
+
+                    b.ToTable("BankAccounts");
+                });
+
+            modelBuilder.Entity("LifeLedger.Api.Domain.BankStatementImport", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("BankAccountId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset>("ImportedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ImporterKey")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateOnly?>("PeriodEndsOn")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateOnly?>("PeriodStartsOn")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("SourceFileName")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("SourceFingerprint")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("BankAccountId", "SourceFingerprint")
+                        .IsUnique();
+
+                    b.ToTable("BankStatementImports");
+                });
+
+            modelBuilder.Entity("LifeLedger.Api.Domain.BankTransaction", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<decimal>("Amount")
+                        .HasPrecision(18, 4)
+                        .HasColumnType("TEXT");
+
+                    b.Property<decimal?>("BalanceAfter")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("BankStatementImportId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateOnly>("BookedOn")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Category")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Classification")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Counterparty")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Currency")
+                        .IsRequired()
+                        .HasMaxLength(3)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Fingerprint")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("IsExcludedFromSpendingAnalysis")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<Guid?>("LinkedAssetId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("LinkedInvestmentPlanId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateOnly?>("ValueOn")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("LinkedAssetId");
+
+                    b.HasIndex("LinkedInvestmentPlanId");
+
+                    b.HasIndex("BankStatementImportId", "Fingerprint")
+                        .IsUnique();
+
+                    b.ToTable("BankTransactions");
                 });
 
             modelBuilder.Entity("LifeLedger.Api.Domain.CareerPeriod", b =>
@@ -189,12 +509,19 @@ namespace LifeLedger.Api.Data.Migrations
                     b.Property<int>("Kind")
                         .HasColumnType("INTEGER");
 
+                    b.Property<Guid?>("LinkedAssetId")
+                        .HasColumnType("TEXT");
+
                     b.Property<decimal>("MonthlyAmount")
                         .HasPrecision(18, 4)
                         .HasColumnType("TEXT");
 
                     b.Property<string>("Name")
                         .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ObservedBankCategory")
+                        .HasMaxLength(80)
                         .HasColumnType("TEXT");
 
                     b.Property<bool>("SaveInAdvance")
@@ -211,9 +538,35 @@ namespace LifeLedger.Api.Data.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("ScenarioId");
+                    b.HasIndex("LinkedAssetId");
+
+                    b.HasIndex("ScenarioId", "ObservedBankCategory", "Currency");
 
                     b.ToTable("Expenses");
+                });
+
+            modelBuilder.Entity("LifeLedger.Api.Domain.ExpenseAmountChange", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<decimal>("Amount")
+                        .HasPrecision(18, 4)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateOnly>("EffectiveOn")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("ExpenseId")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ExpenseId", "EffectiveOn")
+                        .IsUnique();
+
+                    b.ToTable("ExpenseAmountChanges");
                 });
 
             modelBuilder.Entity("LifeLedger.Api.Domain.FinancialScenario", b =>
@@ -252,10 +605,34 @@ namespace LifeLedger.Api.Data.Migrations
                     b.ToTable("Scenarios");
                 });
 
+            modelBuilder.Entity("LifeLedger.Api.Domain.IncomeMonthlyAllocation", b =>
+                {
+                    b.Property<Guid>("IncomeStreamId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Month")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<decimal>("Share")
+                        .HasPrecision(18, 4)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("IncomeStreamId", "Month");
+
+                    b.ToTable("IncomeMonthlyAllocations");
+                });
+
             modelBuilder.Entity("LifeLedger.Api.Domain.IncomeStream", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("AmountMode")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<decimal>("AnnualAmount")
+                        .HasPrecision(18, 4)
                         .HasColumnType("TEXT");
 
                     b.Property<decimal>("AnnualGrowthRate")
@@ -274,6 +651,9 @@ namespace LifeLedger.Api.Data.Migrations
 
                     b.Property<int>("Kind")
                         .HasColumnType("INTEGER");
+
+                    b.Property<Guid?>("LinkedAssetId")
+                        .HasColumnType("TEXT");
 
                     b.Property<decimal>("MonthlyAmount")
                         .HasPrecision(18, 4)
@@ -297,6 +677,8 @@ namespace LifeLedger.Api.Data.Migrations
                         .HasColumnType("TEXT");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("LinkedAssetId");
 
                     b.HasIndex("ScenarioId");
 
@@ -406,6 +788,81 @@ namespace LifeLedger.Api.Data.Migrations
                     b.ToTable("NetWorthSnapshots");
                 });
 
+            modelBuilder.Entity("LifeLedger.Api.Domain.PlannedAssetSale", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("AssetId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("CapitalGainsTaxCountryCode")
+                        .HasMaxLength(2)
+                        .HasColumnType("TEXT");
+
+                    b.Property<decimal>("CapitalGainsTaxRate")
+                        .HasPrecision(18, 4)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Currency")
+                        .IsRequired()
+                        .HasMaxLength(3)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Destination")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<Guid?>("DestinationAssetId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("DestinationInvestmentPlanId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<decimal>("GrossSalePrice")
+                        .HasPrecision(18, 4)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateOnly>("HappensOn")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Notes")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("RepayLinkedLiabilities")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<Guid>("ScenarioId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<decimal>("SellingCosts")
+                        .HasPrecision(18, 4)
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("UseProjectedValue")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AssetId")
+                        .IsUnique();
+
+                    b.HasIndex("DestinationAssetId");
+
+                    b.HasIndex("DestinationInvestmentPlanId");
+
+                    b.HasIndex("ScenarioId", "HappensOn");
+
+                    b.ToTable("AssetSales");
+                });
+
             modelBuilder.Entity("LifeLedger.Api.Domain.Profile", b =>
                 {
                     b.Property<Guid>("Id")
@@ -453,6 +910,11 @@ namespace LifeLedger.Api.Data.Migrations
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Currency")
+                        .IsRequired()
+                        .HasMaxLength(3)
                         .HasColumnType("TEXT");
 
                     b.Property<int>("DurationMonths")
@@ -535,6 +997,28 @@ namespace LifeLedger.Api.Data.Migrations
                     b.ToTable("Assumptions");
                 });
 
+            modelBuilder.Entity("LifeLedger.Api.Domain.AllocationStrategy", b =>
+                {
+                    b.HasOne("LifeLedger.Api.Domain.FinancialScenario", "Scenario")
+                        .WithMany("AllocationStrategies")
+                        .HasForeignKey("ScenarioId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Scenario");
+                });
+
+            modelBuilder.Entity("LifeLedger.Api.Domain.AllocationStrategyTarget", b =>
+                {
+                    b.HasOne("LifeLedger.Api.Domain.AllocationStrategy", "AllocationStrategy")
+                        .WithMany("Targets")
+                        .HasForeignKey("AllocationStrategyId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("AllocationStrategy");
+                });
+
             modelBuilder.Entity("LifeLedger.Api.Domain.Asset", b =>
                 {
                     b.HasOne("LifeLedger.Api.Domain.FinancialScenario", "Scenario")
@@ -546,6 +1030,36 @@ namespace LifeLedger.Api.Data.Migrations
                     b.Navigation("Scenario");
                 });
 
+            modelBuilder.Entity("LifeLedger.Api.Domain.AssetCharacteristicProfile", b =>
+                {
+                    b.HasOne("LifeLedger.Api.Domain.Asset", "Asset")
+                        .WithOne("CharacteristicProfile")
+                        .HasForeignKey("LifeLedger.Api.Domain.AssetCharacteristicProfile", "AssetId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Asset");
+                });
+
+            modelBuilder.Entity("LifeLedger.Api.Domain.AssetLiabilityLink", b =>
+                {
+                    b.HasOne("LifeLedger.Api.Domain.Asset", "Asset")
+                        .WithMany("LiabilityLinks")
+                        .HasForeignKey("AssetId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("LifeLedger.Api.Domain.Liability", "Liability")
+                        .WithMany("AssetLinks")
+                        .HasForeignKey("LiabilityId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Asset");
+
+                    b.Navigation("Liability");
+                });
+
             modelBuilder.Entity("LifeLedger.Api.Domain.AssetQuoteSnapshot", b =>
                 {
                     b.HasOne("LifeLedger.Api.Domain.Asset", "Asset")
@@ -555,6 +1069,71 @@ namespace LifeLedger.Api.Data.Migrations
                         .IsRequired();
 
                     b.Navigation("Asset");
+                });
+
+            modelBuilder.Entity("LifeLedger.Api.Domain.AssetValuationSnapshot", b =>
+                {
+                    b.HasOne("LifeLedger.Api.Domain.Asset", "Asset")
+                        .WithMany("ValuationSnapshots")
+                        .HasForeignKey("AssetId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Asset");
+                });
+
+            modelBuilder.Entity("LifeLedger.Api.Domain.BankAccount", b =>
+                {
+                    b.HasOne("LifeLedger.Api.Domain.Asset", "LinkedAsset")
+                        .WithMany()
+                        .HasForeignKey("LinkedAssetId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("LifeLedger.Api.Domain.FinancialScenario", "Scenario")
+                        .WithMany("BankAccounts")
+                        .HasForeignKey("ScenarioId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("LinkedAsset");
+
+                    b.Navigation("Scenario");
+                });
+
+            modelBuilder.Entity("LifeLedger.Api.Domain.BankStatementImport", b =>
+                {
+                    b.HasOne("LifeLedger.Api.Domain.BankAccount", "BankAccount")
+                        .WithMany("Imports")
+                        .HasForeignKey("BankAccountId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("BankAccount");
+                });
+
+            modelBuilder.Entity("LifeLedger.Api.Domain.BankTransaction", b =>
+                {
+                    b.HasOne("LifeLedger.Api.Domain.BankStatementImport", "BankStatementImport")
+                        .WithMany("Transactions")
+                        .HasForeignKey("BankStatementImportId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("LifeLedger.Api.Domain.Asset", "LinkedAsset")
+                        .WithMany()
+                        .HasForeignKey("LinkedAssetId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("LifeLedger.Api.Domain.InvestmentPlan", "LinkedInvestmentPlan")
+                        .WithMany()
+                        .HasForeignKey("LinkedInvestmentPlanId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("BankStatementImport");
+
+                    b.Navigation("LinkedAsset");
+
+                    b.Navigation("LinkedInvestmentPlan");
                 });
 
             modelBuilder.Entity("LifeLedger.Api.Domain.CareerPeriod", b =>
@@ -570,13 +1149,31 @@ namespace LifeLedger.Api.Data.Migrations
 
             modelBuilder.Entity("LifeLedger.Api.Domain.Expense", b =>
                 {
+                    b.HasOne("LifeLedger.Api.Domain.Asset", "LinkedAsset")
+                        .WithMany()
+                        .HasForeignKey("LinkedAssetId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
                     b.HasOne("LifeLedger.Api.Domain.FinancialScenario", "Scenario")
                         .WithMany("Expenses")
                         .HasForeignKey("ScenarioId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
+                    b.Navigation("LinkedAsset");
+
                     b.Navigation("Scenario");
+                });
+
+            modelBuilder.Entity("LifeLedger.Api.Domain.ExpenseAmountChange", b =>
+                {
+                    b.HasOne("LifeLedger.Api.Domain.Expense", "Expense")
+                        .WithMany("AmountChanges")
+                        .HasForeignKey("ExpenseId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Expense");
                 });
 
             modelBuilder.Entity("LifeLedger.Api.Domain.FinancialScenario", b =>
@@ -590,13 +1187,31 @@ namespace LifeLedger.Api.Data.Migrations
                     b.Navigation("Profile");
                 });
 
+            modelBuilder.Entity("LifeLedger.Api.Domain.IncomeMonthlyAllocation", b =>
+                {
+                    b.HasOne("LifeLedger.Api.Domain.IncomeStream", "IncomeStream")
+                        .WithMany("MonthlyAllocations")
+                        .HasForeignKey("IncomeStreamId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("IncomeStream");
+                });
+
             modelBuilder.Entity("LifeLedger.Api.Domain.IncomeStream", b =>
                 {
+                    b.HasOne("LifeLedger.Api.Domain.Asset", "LinkedAsset")
+                        .WithMany()
+                        .HasForeignKey("LinkedAssetId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
                     b.HasOne("LifeLedger.Api.Domain.FinancialScenario", "Scenario")
                         .WithMany("Incomes")
                         .HasForeignKey("ScenarioId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+
+                    b.Navigation("LinkedAsset");
 
                     b.Navigation("Scenario");
                 });
@@ -634,6 +1249,39 @@ namespace LifeLedger.Api.Data.Migrations
                     b.Navigation("Profile");
                 });
 
+            modelBuilder.Entity("LifeLedger.Api.Domain.PlannedAssetSale", b =>
+                {
+                    b.HasOne("LifeLedger.Api.Domain.Asset", "Asset")
+                        .WithMany()
+                        .HasForeignKey("AssetId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("LifeLedger.Api.Domain.Asset", "DestinationAsset")
+                        .WithMany()
+                        .HasForeignKey("DestinationAssetId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("LifeLedger.Api.Domain.InvestmentPlan", "DestinationInvestmentPlan")
+                        .WithMany()
+                        .HasForeignKey("DestinationInvestmentPlanId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("LifeLedger.Api.Domain.FinancialScenario", "Scenario")
+                        .WithMany("AssetSales")
+                        .HasForeignKey("ScenarioId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Asset");
+
+                    b.Navigation("DestinationAsset");
+
+                    b.Navigation("DestinationInvestmentPlan");
+
+                    b.Navigation("Scenario");
+                });
+
             modelBuilder.Entity("LifeLedger.Api.Domain.ScenarioEvent", b =>
                 {
                     b.HasOne("LifeLedger.Api.Domain.FinancialScenario", "Scenario")
@@ -656,12 +1304,47 @@ namespace LifeLedger.Api.Data.Migrations
                     b.Navigation("Scenario");
                 });
 
+            modelBuilder.Entity("LifeLedger.Api.Domain.AllocationStrategy", b =>
+                {
+                    b.Navigation("Targets");
+                });
+
+            modelBuilder.Entity("LifeLedger.Api.Domain.Asset", b =>
+                {
+                    b.Navigation("CharacteristicProfile");
+
+                    b.Navigation("LiabilityLinks");
+
+                    b.Navigation("ValuationSnapshots");
+                });
+
+            modelBuilder.Entity("LifeLedger.Api.Domain.BankAccount", b =>
+                {
+                    b.Navigation("Imports");
+                });
+
+            modelBuilder.Entity("LifeLedger.Api.Domain.BankStatementImport", b =>
+                {
+                    b.Navigation("Transactions");
+                });
+
+            modelBuilder.Entity("LifeLedger.Api.Domain.Expense", b =>
+                {
+                    b.Navigation("AmountChanges");
+                });
+
             modelBuilder.Entity("LifeLedger.Api.Domain.FinancialScenario", b =>
                 {
+                    b.Navigation("AllocationStrategies");
+
+                    b.Navigation("AssetSales");
+
                     b.Navigation("Assets");
 
                     b.Navigation("Assumptions")
                         .IsRequired();
+
+                    b.Navigation("BankAccounts");
 
                     b.Navigation("Events");
 
@@ -672,6 +1355,16 @@ namespace LifeLedger.Api.Data.Migrations
                     b.Navigation("Investments");
 
                     b.Navigation("Liabilities");
+                });
+
+            modelBuilder.Entity("LifeLedger.Api.Domain.IncomeStream", b =>
+                {
+                    b.Navigation("MonthlyAllocations");
+                });
+
+            modelBuilder.Entity("LifeLedger.Api.Domain.Liability", b =>
+                {
+                    b.Navigation("AssetLinks");
                 });
 
             modelBuilder.Entity("LifeLedger.Api.Domain.Profile", b =>

@@ -22,9 +22,9 @@ It is not a retirement calculator. It brings income, assets, liabilities, expens
 | Area | Included |
 | --- | --- |
 | Profile | Age, home country, base currency, expected lifespan, partner, children, multi-country careers |
-| Income | Salary, freelance, rental, dividends, pensions, royalties and other recurring income |
+| Income | Monthly or annual income, optional seasonal split, tax assumptions, and links between rental income and property |
 | Balance sheet | Cash, ETFs, stock, crypto, real estate, business, collectibles; mortgages, loans and leasing |
-| Spending and investment | Recurring/exceptional expenses, inflation indexing and monthly investment plans |
+| Spending and investment | Recurring/exceptional expenses, inflation indexing, optional asset-linked charges and monthly investment plans |
 | Scenarios | Unlimited scenario branches, inherited inputs and life events |
 | Simulation | Deterministic projection, historical return cycle and seeded Monte Carlo runs |
 | Dashboard | Net worth, cash flow, allocation, passive income, retirement income, FI date, purchasing power, probability and warnings |
@@ -51,7 +51,7 @@ Prerequisites: [.NET 9 SDK](https://dotnet.microsoft.com/download/dotnet/9.0) an
 ```bash
 # Terminal 1: API, database and demo ledger
 dotnet restore
-dotnet run --project src/LifeLedger.Api --urls http://localhost:5078
+./scripts/start-local.sh
 
 # Terminal 2: React development server
 cd src/lifeledger-web
@@ -59,7 +59,7 @@ npm install
 npm run dev
 ```
 
-Open `http://localhost:5173`. The first launch creates `data/lifeledger.db` and a non-personal sample plan so the dashboard is immediately useful. Set `SeedDemoData` to `false` in `src/LifeLedger.Api/appsettings.json` for an empty installation.
+Open `http://localhost:5173`. The first launch creates `data/lifeledger.db` and a non-personal sample plan so the dashboard is immediately useful. Set `SeedDemoData` to `false` in `src/LifeLedger.Api/appsettings.json` for an empty installation. The local launcher checks whether LifeLedger is already running and reports a clear port conflict before starting another instance.
 
 ### Run the compiled app as one service
 
@@ -68,7 +68,7 @@ cd src/lifeledger-web
 npm install
 npm run build
 cd ../..
-dotnet run --project src/LifeLedger.Api --urls http://localhost:5078
+./scripts/start-local.sh
 ```
 
 The frontend build is copied to `src/LifeLedger.Api/wwwroot`; browsing `http://localhost:5078` then serves both the client and API. Node.js is only needed to build the frontend—there is no external service required at runtime.
@@ -106,6 +106,11 @@ The API is intentionally simple and local. Common endpoints:
 | `POST` | `/api/scenarios/{id}/simulate` | Run `Deterministic`, `MonteCarlo` or `Historical` simulation |
 | `GET` | `/api/scenarios/{id}/dashboard` | Dashboard-ready financial indicators |
 | `GET` / `POST` | `/api/export` / `/api/import` | Portable JSON backup and restore |
+| `POST` / `PUT` / `DELETE` | `/api/scenarios/{id}/asset-sales`, `/api/asset-sales/{id}` | Plan future asset sales and edit their financial assumptions |
+| `POST` | `/api/demo/restore` | Replace local financial data with the deterministic fictional demo |
+| `GET` / `PUT` | `/api/scenarios/{id}/integrations/ibkr-flex` | Read-only IBKR Flex connection status and configuration |
+| `POST` | `/api/scenarios/{id}/integrations/ibkr-flex/sync` | Manually synchronize IBKR open positions |
+| `GET` / `POST` | `/api/scenarios/{id}/allocation-strategies` | List or create dated allocation strategies |
 
 `POST /api/scenarios/{id}/simulate` accepts:
 
@@ -114,6 +119,12 @@ The API is intentionally simple and local. Common endpoints:
 ```
 
 The complete endpoint behavior and financial rules are documented in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+
+For repeatable UI review, open **Settings → Demo mode → Restore demo data**. The versioned fixture always restores the same dates, identifiers, financial cases and chart history; see [Demo mode](docs/demo-mode.md).
+
+For setup, privacy safeguards and the French version of the guide, see [IBKR Flex portfolio synchronization](docs/integrations/ibkr-flex.md).
+
+Target bands, strategy versioning and the boundary for future AI recommendations are described in [Allocation strategies](docs/allocation-strategies.md).
 
 ## Plugin development
 
@@ -135,7 +146,8 @@ Plugins run in-process and therefore must be trusted code. Treat the plugin dire
 
 ## Financial model notes
 
-- All displayed values are currently treated as the profile base currency. Currency conversion is intentionally not guessed; model values after converting them yourself or add an exchange-rate plugin.
+- Each entry retains its own currency. Dashboard totals are converted to the profile base currency with locally cached rates; refreshing exchange rates remains an explicit action.
+- An annual income is spread evenly by default. Seasonal allocation changes the months in which money is received but never changes the declared annual total.
 - Salaries stop at the configured retirement age unless their end date says otherwise. Rental, dividend and royalty streams remain active while their date range is active.
 - Public retirement income is the sum of the monthly estimates entered for career periods. Country plugins can replace this with detailed entitlement rules.
 - Monte Carlo uses a deterministic seed per run, the portfolio-weighted expected return and volatility; its results are reproducible for the same input.

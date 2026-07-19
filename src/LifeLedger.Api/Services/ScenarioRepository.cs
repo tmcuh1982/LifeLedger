@@ -21,11 +21,15 @@ public sealed class ScenarioRepository(LifeLedgerDbContext db) : IScenarioReposi
             .AsSplitQuery()
             .Include(x => x.Profile).ThenInclude(x => x!.Careers)
             .Include(x => x.Assumptions)
-            .Include(x => x.Incomes)
-            .Include(x => x.Assets)
+            .Include(x => x.Incomes).ThenInclude(x => x.MonthlyAllocations)
+            .Include(x => x.Assets).ThenInclude(x => x.CharacteristicProfile)
+            .Include(x => x.Assets).ThenInclude(x => x.LiabilityLinks)
+            .Include(x => x.Assets).ThenInclude(x => x.ValuationSnapshots)
             .Include(x => x.Liabilities)
-            .Include(x => x.Expenses)
+            .Include(x => x.Expenses).ThenInclude(x => x.AmountChanges)
             .Include(x => x.Investments)
+            .Include(x => x.AssetSales)
             .Include(x => x.Events)
+            .Include(x => x.AllocationStrategies).ThenInclude(x => x.Targets)
             .FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
 }

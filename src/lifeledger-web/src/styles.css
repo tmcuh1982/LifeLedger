@@ -11,6 +11,7 @@ button { cursor: pointer; }
 
 @layer components {
   .glass { @apply border border-white/20 bg-white/10 shadow-glass backdrop-blur-2xl; }
+  .modal-surface { @apply border border-white/20 bg-panel shadow-glass; }
   .glass-hover { @apply transition hover:bg-white/[0.14]; }
   .eyebrow { @apply text-xs font-semibold uppercase tracking-[0.14em] text-muted; }
   .nav-item { @apply flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-medium text-muted transition hover:bg-white/10 hover:text-mist; }

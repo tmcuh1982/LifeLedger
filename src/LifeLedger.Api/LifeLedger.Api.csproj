@@ -13,5 +13,10 @@
     </PackageReference>
     <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="9.0.0" />
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="9.0.0" />
+    <PackageReference Include="PdfPig" Version="0.1.14" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Update="BankImporters/*.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

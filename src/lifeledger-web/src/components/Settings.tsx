@@ -1,8 +1,9 @@
 import { ChangeEvent, useState } from 'react'
 import { assetKindLabel, builtInAssetKinds } from '../assetCategories'
-import { api } from '../api'
 import type { Locale } from '../i18n'
-import type { AssetCategory, LifeLedgerExport, Profile } from '../types'
+import type { AssetCategory, AssetProfileDefinition, AssetProfileDefinitionInput, LifeLedgerExport, Profile } from '../types'
+import { AssetProfileBuilder } from './AssetProfileBuilder'
+import { DateField } from './DateField'
 
 const currencies = ['EUR', 'USD', 'PLN', 'GBP', 'CHF', 'CAD', 'JPY']
 const tr = (locale: Locale, english: string, french: string) => locale === 'fr' ? french : english
@@ -35,20 +36,25 @@ interface SettingsProps {
   locale: Locale
   profile?: Profile
   assetCategories: AssetCategory[]
+  assetProfileDefinitions: AssetProfileDefinition[]
   saving: boolean
   onClose: () => void
   onSaveProfile: (profile: Profile) => Promise<void>
   onCreateAssetCategory: (name: string) => Promise<AssetCategory[]>
   onRenameAssetCategory: (currentName: string, name: string) => Promise<AssetCategory[]>
   onDeleteAssetCategory: (name: string) => Promise<AssetCategory[]>
+  onCreateAssetProfileDefinition: (definition: AssetProfileDefinitionInput) => Promise<void>
+  onUpdateAssetProfileDefinition: (key: string, definition: AssetProfileDefinitionInput) => Promise<void>
+  onDeleteAssetProfileDefinition: (key: string) => Promise<void>
   onExport: (fileName: string) => Promise<void>
   onRestore: (document: LifeLedgerExport) => Promise<void>
+  onRestoreDemo: () => Promise<void>
   onResetMarketHistory: () => Promise<void>
   onResetNetWorthHistory: () => Promise<void>
   onDeleteAllData: () => Promise<void>
 }
 
-export function Settings({ locale, profile, assetCategories, saving, onClose, onSaveProfile, onCreateAssetCategory, onRenameAssetCategory, onDeleteAssetCategory, onExport, onRestore, onResetMarketHistory, onResetNetWorthHistory, onDeleteAllData }: SettingsProps) {
+export function Settings({ locale, profile, assetCategories, assetProfileDefinitions, saving, onClose, onSaveProfile, onCreateAssetCategory, onRenameAssetCategory, onDeleteAssetCategory, onCreateAssetProfileDefinition, onUpdateAssetProfileDefinition, onDeleteAssetProfileDefinition, onExport, onRestore, onRestoreDemo, onResetMarketHistory, onResetNetWorthHistory, onDeleteAllData }: SettingsProps) {
   const [currency, setCurrency] = useState(profile?.baseCurrency ?? 'EUR')
   const [birthDate, setBirthDate] = useState(profile?.birthDate ?? '')
   const [sex, setSex] = useState<Profile['sex']>(profile?.sex ?? 'Neutral')
@@ -56,8 +62,9 @@ export function Settings({ locale, profile, assetCategories, saving, onClose, on
   const [lifespanReference, setLifespanReference] = useState<'neutral' | 'female' | 'male' | 'custom'>(referenceFor(profile?.expectedLifespan, profile?.sex))
   const [restoring, setRestoring] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [restoringDemo, setRestoringDemo] = useState(false)
   const [message, setMessage] = useState<string>()
-  const [csvSummary, setCsvSummary] = useState<{ transactions: number; months: number; totalExpenses: number; averageMonthlyExpenses: number; currency: string; categories: Array<{ name: string; total: number }> }>()
+  const [profileSaveError, setProfileSaveError] = useState<string>()
   const [customCategories, setCustomCategories] = useState(assetCategories)
   const [newCategory, setNewCategory] = useState('')
   const [categoryBusy, setCategoryBusy] = useState(false)
@@ -66,13 +73,31 @@ export function Settings({ locale, profile, assetCategories, saving, onClose, on
   const canSaveProfile = profile && (currency !== profile.baseCurrency || birthDate !== profile.birthDate || sex !== profile.sex || expectedLifespan !== profile.expectedLifespan)
 
   function setReference(reference: 'neutral' | 'female' | 'male' | 'custom') {
+    setProfileSaveError(undefined)
     setLifespanReference(reference)
     if (reference !== 'custom') setExpectedLifespan(referenceAge(reference))
   }
 
   function changeSex(nextSex: Profile['sex']) {
+    setProfileSaveError(undefined)
     setSex(nextSex)
     if (lifespanReference !== 'custom') setReference(referenceFromSex(nextSex))
+  }
+
+  async function saveProfile() {
+    if (!profile) return
+    setProfileSaveError(undefined)
+    try {
+      await onSaveProfile({ ...profile, baseCurrency: currency, birthDate, sex, expectedLifespan })
+    } catch (reason) {
+      const technicalMessage = reason instanceof Error ? reason.message : ''
+      const status = technicalMessage.match(/\((\d{3})\)/)?.[1]
+      setProfileSaveError(tr(
+        locale,
+        `Unable to save these settings${status ? ` (server error ${status})` : ''}. Your changes are still here; you can try again.`,
+        `Impossible d’enregistrer ces paramètres${status ? ` (erreur serveur ${status})` : ''}. Vos modifications sont conservées dans cette fenêtre ; vous pouvez réessayer.`
+      ))
+    }
   }
 
   async function restore(event: ChangeEvent<HTMLInputElement>) {
@@ -81,7 +106,7 @@ export function Settings({ locale, profile, assetCategories, saving, onClose, on
 
     try {
       const document = JSON.parse(await file.text()) as LifeLedgerExport
-      if (document.schemaVersion !== 1) throw new Error(tr(locale, 'This file is not a compatible LifeLedger backup.', 'Ce fichier n’est pas une sauvegarde LifeLedger compatible.'))
+      if (document.schemaVersion < 1 || document.schemaVersion > 11) throw new Error(tr(locale, 'This file is not a compatible LifeLedger backup.', 'Ce fichier n’est pas une sauvegarde LifeLedger compatible.'))
       if (!window.confirm(tr(locale, 'Restore this backup and replace the current data?', 'Restaurer cette sauvegarde et remplacer les données actuelles ?'))) return
       setRestoring(true)
       await onRestore(document)
@@ -91,6 +116,23 @@ export function Settings({ locale, profile, assetCategories, saving, onClose, on
     } finally {
       setRestoring(false)
       event.target.value = ''
+    }
+  }
+
+  async function restoreDemo() {
+    const warning = tr(
+      locale,
+      'Restore the complete demo? This replaces your current local data with a fixed fictional household. Export a backup first if you need the current data.',
+      'Restaurer la démonstration complète ? Vos données locales actuelles seront remplacées par un foyer fictif fixe. Exportez d’abord une sauvegarde si vous souhaitez conserver vos données.'
+    )
+    if (!window.confirm(warning)) return
+    try {
+      setRestoringDemo(true)
+      setMessage(undefined)
+      await onRestoreDemo()
+    } catch (reason) {
+      setMessage(reason instanceof Error ? reason.message : tr(locale, 'Unable to restore the demo.', 'Impossible de restaurer la démonstration.'))
+      setRestoringDemo(false)
     }
   }
 
@@ -126,14 +168,6 @@ export function Settings({ locale, profile, assetCategories, saving, onClose, on
     }
   }
 
-  async function analyseCsv(event: ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0]
-    if (!file) return
-    try { setCsvSummary(await api.analyseExpenseCsv(await file.text())) }
-    catch (reason) { setMessage(reason instanceof Error ? reason.message : tr(locale, 'Unable to read this CSV file.', 'Impossible de lire ce fichier CSV.')) }
-    finally { event.target.value = '' }
-  }
-
   async function addAssetCategory() {
     if (!newCategory.trim()) return
     try { setCategoryBusy(true); setCustomCategories(await onCreateAssetCategory(newCategory)); setNewCategory(''); setMessage(undefined) }
@@ -156,7 +190,7 @@ export function Settings({ locale, profile, assetCategories, saving, onClose, on
 
   return (
     <div className="fixed inset-0 z-30 overflow-y-auto bg-inkDeep/70 p-4 backdrop-blur-sm">
-      <section aria-modal="true" aria-label={tr(locale, 'Settings', 'Paramètres')} className="glass mx-auto my-6 w-full max-w-xl rounded-3xl p-6" role="dialog">
+      <section aria-modal="true" aria-label={tr(locale, 'Settings', 'Paramètres')} className="modal-surface mx-auto my-6 w-full max-w-3xl rounded-3xl p-6" role="dialog">
         <div className="flex items-start justify-between gap-4">
           <div>
             <p className="eyebrow">{tr(locale, 'Settings', 'Paramètres')}</p>
@@ -169,7 +203,7 @@ export function Settings({ locale, profile, assetCategories, saving, onClose, on
           {profile && <article className="rounded-2xl border border-white/10 bg-white/5 p-4">
             <label className="block text-sm text-mist">
               {tr(locale, 'Default currency', 'Devise par défaut')}
-              <select className="field mt-2" value={currency} onChange={(event) => setCurrency(event.target.value)}>
+              <select className="field mt-2" value={currency} onChange={(event) => { setProfileSaveError(undefined); setCurrency(event.target.value) }}>
                 {currencies.map((entry) => <option className="bg-panel" key={entry} value={entry}>{entry}</option>)}
               </select>
             </label>
@@ -178,11 +212,7 @@ export function Settings({ locale, profile, assetCategories, saving, onClose, on
               <p className="text-sm font-medium text-mist">{tr(locale, 'About you', 'À propos de vous')}</p>
               <p className="mt-1 text-xs leading-5 text-muted">{tr(locale, 'Your date of birth gives every forecast both a calendar year and an age. Sex is optional and only guides the life-expectancy reference; it never changes your finances automatically.', 'Votre date de naissance donne à chaque prévision une année civile et un âge. Le sexe est facultatif et sert uniquement de référence pour l’espérance de vie ; il ne modifie jamais vos finances automatiquement.')}</p>
               <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                <label className="block text-sm text-mist">
-                  {tr(locale, 'Date of birth', 'Date de naissance')}
-                  <input className="field mt-2" max={new Date().toISOString().slice(0, 10)} type="date" value={birthDate} onChange={(event) => setBirthDate(event.target.value)} />
-                  {currentAge !== undefined && <span className="mt-2 block text-xs text-sky">{tr(locale, 'Current age:', 'Âge actuel :')} {currentAge} {tr(locale, 'years', 'ans')}</span>}
-                </label>
+                <div><DateField label={tr(locale, 'Date of birth', 'Date de naissance')} locale={locale} max={new Date().toISOString().slice(0, 10)} minYear={1900} value={birthDate} onChange={(nextBirthDate) => { setProfileSaveError(undefined); setBirthDate(nextBirthDate) }} />{currentAge !== undefined && <span className="mt-2 block text-xs text-sky">{tr(locale, 'Current age:', 'Âge actuel :')} {currentAge} {tr(locale, 'years', 'ans')}</span>}</div>
                 <label className="block text-sm text-mist">
                   {tr(locale, 'Sex for reference statistics', 'Sexe pour les statistiques de référence')}
                   <select className="field mt-2" value={sex} onChange={(event) => changeSex(event.target.value as Profile['sex'])}>
@@ -210,12 +240,13 @@ export function Settings({ locale, profile, assetCategories, saving, onClose, on
                 </label>
                 <label className="block text-sm text-mist">
                   {tr(locale, 'Final age', 'Âge final')}
-                  <input className="field mt-2" max="130" min="50" type="number" value={expectedLifespan} onChange={(event) => { setLifespanReference('custom'); setExpectedLifespan(Math.max(50, Math.min(130, Number(event.target.value) || 50))) }} />
+                  <input className="field mt-2" max="130" min="50" type="number" value={expectedLifespan} onChange={(event) => { setProfileSaveError(undefined); setLifespanReference('custom'); setExpectedLifespan(Math.max(50, Math.min(130, Number(event.target.value) || 50))) }} />
                 </label>
               </div>
               <p className="mt-3 text-xs leading-5 text-muted">{tr(locale, 'European references are rounded planning values: 79 for men, 84 for women and 82 for the neutral reference. They are editable assumptions, not a prediction.', 'Les références européennes sont des hypothèses arrondies : 79 ans pour les hommes, 84 ans pour les femmes et 82 ans pour la référence neutre. Elles sont modifiables et ne constituent pas une prédiction.')}</p>
             </div>
-            <button className="ghost-button mt-4" disabled={saving || !canSaveProfile || !birthDate} onClick={() => profile && void onSaveProfile({ ...profile, baseCurrency: currency, birthDate, sex, expectedLifespan })}>{saving ? tr(locale, 'Saving…', 'Enregistrement…') : tr(locale, 'Save settings', 'Enregistrer les paramètres')}</button>
+            {profileSaveError && <div aria-live="assertive" className="mt-4 rounded-xl border border-danger/40 bg-danger/10 px-4 py-3 text-sm leading-5 text-danger" role="alert"><p className="font-semibold">{tr(locale, 'Settings not saved', 'Paramètres non enregistrés')}</p><p className="mt-1 text-xs leading-5">{profileSaveError}</p></div>}
+            <button className="ghost-button mt-4" disabled={saving || !canSaveProfile || !birthDate} onClick={() => void saveProfile()}>{saving ? tr(locale, 'Saving…', 'Enregistrement…') : tr(locale, 'Save settings', 'Enregistrer les paramètres')}</button>
           </article>}
 
           <article className="rounded-2xl border border-white/10 bg-white/5 p-4">
@@ -232,11 +263,20 @@ export function Settings({ locale, profile, assetCategories, saving, onClose, on
             </div>
           </article>
 
-          <article className="rounded-2xl border border-white/10 bg-white/5 p-4">
-            <p className="text-sm font-medium text-mist">{tr(locale, 'Import bank or Revolut CSV', 'Importer un CSV bancaire ou Revolut')}</p>
-            <p className="mt-1 text-xs leading-5 text-muted">{tr(locale, 'The file is analysed only in memory on your local server. Transactions are not saved.', 'Le fichier est analysé uniquement en mémoire sur votre serveur local. Les transactions ne sont pas enregistrées.')}</p>
-            <label className="ghost-button mt-3 inline-flex cursor-pointer">{tr(locale, 'Choose CSV file', 'Choisir un fichier CSV')}<input accept=".csv,text/csv" className="sr-only" type="file" onChange={(event) => void analyseCsv(event)} /></label>
-            {csvSummary && <div className="mt-4 rounded-xl border border-sky/20 bg-sky/10 p-3"><p className="text-sm font-semibold text-sky">{tr(locale, 'Estimated monthly expenses', 'Dépenses mensuelles estimées')} : {new Intl.NumberFormat(locale, { style: 'currency', currency: csvSummary.currency, maximumFractionDigits: 0 }).format(csvSummary.averageMonthlyExpenses)}</p><p className="mt-1 text-xs text-muted">{csvSummary.transactions} {tr(locale, 'outgoing transactions across', 'transactions sortantes sur')} {csvSummary.months} {tr(locale, 'month(s).', 'mois.')}</p><div className="mt-3 space-y-1 text-xs text-mist">{csvSummary.categories.slice(0, 4).map((category) => <p key={category.name}>{category.name} · {new Intl.NumberFormat(locale, { style: 'currency', currency: csvSummary.currency, maximumFractionDigits: 0 }).format(category.total)}</p>)}</div></div>}
+          <AssetProfileBuilder definitions={assetProfileDefinitions} locale={locale} onCreate={onCreateAssetProfileDefinition} onUpdate={onUpdateAssetProfileDefinition} onDelete={onDeleteAssetProfileDefinition} />
+
+          <article className="rounded-2xl border border-sky/20 bg-sky/10 p-4">
+            <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-start">
+              <div>
+                <p className="text-sm font-semibold text-sky">{tr(locale, 'Demo mode', 'Mode démonstration')}</p>
+                <p className="mt-1 text-sm font-medium text-mist">{tr(locale, 'Restore the complete fictional household', 'Restaurer le foyer fictif complet')}</p>
+                <p className="mt-1 max-w-xl text-xs leading-5 text-muted">{tr(locale, 'Loads the same dated scenarios, currencies, assets, debts, expenses, bank operations and future events every time. You can freely add, edit and delete entries, then restore this exact state for regression tests and screenshots.', 'Recharge toujours les mêmes scénarios datés, devises, actifs, dettes, dépenses, opérations bancaires et événements futurs. Vous pouvez librement ajouter, modifier et supprimer, puis retrouver exactement cet état pour les tests de non-régression et les captures d’écran.')}</p>
+              </div>
+              <span className="shrink-0 rounded-full border border-sky/20 bg-white/5 px-3 py-1.5 text-xs font-semibold text-sky">v1</span>
+            </div>
+            <button className="ghost-button mt-4 border-sky/20 bg-white/10" disabled={restoringDemo} onClick={() => void restoreDemo()}>
+              {restoringDemo ? tr(locale, 'Restoring demo…', 'Restauration de la démo…') : tr(locale, 'Restore demo data', 'Restaurer les données de démo')}
+            </button>
           </article>
 
           {profile && <article className="rounded-2xl border border-white/10 bg-white/5 p-4">

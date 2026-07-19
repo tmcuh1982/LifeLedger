@@ -1,0 +1,7 @@
+{
+  "key": "fortis-pdf-v1",
+  "bankName": "BNP Paribas Fortis",
+  "format": "FortisPdf",
+  "version": 1,
+  "acceptedExtensions": [".pdf"]
+}

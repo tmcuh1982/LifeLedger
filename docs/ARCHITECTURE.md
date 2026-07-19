@@ -24,9 +24,12 @@ erDiagram
   PROFILE ||--o{ FINANCIAL_SCENARIO : owns
   FINANCIAL_SCENARIO ||--|| SIMULATION_ASSUMPTIONS : configures
   FINANCIAL_SCENARIO ||--o{ INCOME_STREAM : receives
+  INCOME_STREAM ||--o{ INCOME_MONTHLY_ALLOCATION : distributes
   FINANCIAL_SCENARIO ||--o{ ASSET : owns
   FINANCIAL_SCENARIO ||--o{ LIABILITY : owes
   FINANCIAL_SCENARIO ||--o{ EXPENSE : spends
+  ASSET o|--o{ INCOME_STREAM : generates
+  ASSET o|--o{ EXPENSE : causes
   FINANCIAL_SCENARIO ||--o{ INVESTMENT_PLAN : contributes
   FINANCIAL_SCENARIO ||--o{ SCENARIO_EVENT : plans
 ```
@@ -61,10 +64,11 @@ Monte Carlo’s `probabilityOfSuccess` is the share of paths that do not dip bel
 ### Important assumptions
 
 - Expenses marked `IndexedToInflation` compound at the scenario inflation rate.
-- Income streams compound at their own annual growth rate.
+- Income streams compound at their own annual growth rate. `IIncomeScheduleService` converts monthly, annual and seasonal declarations into each projected month's cash flow.
+- Seasonal percentages are normalised, so they change timing without changing the declared annual total.
 - Salaries stop at the scenario retirement age; other income streams use their defined start/end dates.
 - Career-period pension estimates are added together once retirement starts. This supports a person who worked in Belgium, France, Poland, Germany, the Netherlands or elsewhere without falsely merging country systems.
-- Values are in a chosen base currency. No exchange rate is silently inferred.
+- Entries retain their own currency and are consolidated through locally cached exchange rates into the profile's base currency.
 
 ## Modularity boundaries
 
@@ -87,4 +91,4 @@ Plugins are discovered from `Plugins:Directory` at startup. They are loaded in-p
 
 SQLite is a single local file at `data/lifeledger.db` by default. SQLite has no listening network port. PostgreSQL is supported when a self-hosted deployment needs concurrent access. Data export/import is JSON so a user can back up their model without a proprietary format.
 
-LifeLedger itself makes no outbound network call. CORS permits only the local Vite development origins by default; the compiled client is served same-origin and does not need CORS. Add trusted domains under `Cors:AllowedOrigins` before serving a separate frontend origin.
+LifeLedger runs without an outbound network dependency. Explicit currency or market-data refreshes may contact the configured public provider without sending the user's portfolio. CORS permits only the local Vite development origins by default; the compiled client is served same-origin and does not need CORS. Add trusted domains under `Cors:AllowedOrigins` before serving a separate frontend origin.
